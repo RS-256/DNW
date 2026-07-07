@@ -42,11 +42,17 @@ export default function TrackPanel() {
             key={layer.id}
             className={`track-row${i === activeLayer ? ' active' : ''}`}
             onClick={() => setActiveLayer(i)}
-            draggable={editing?.index !== i}
-            onDragStart={() => setDragIndex(i)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => onDrop(e, i)}
           >
+            <span
+              className="track-grip"
+              draggable
+              onDragStart={() => setDragIndex(i)}
+              title="Drag to reorder"
+            >
+              ⋮⋮
+            </span>
             <input
               className="track-color"
               type="color"
