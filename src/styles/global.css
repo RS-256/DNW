@@ -264,6 +264,46 @@ body {
   padding: 3px 6px;
 }
 
+/* --- confirm dialog --- */
+
+.confirm-dialog {
+  width: min(360px, 90vw);
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-cancel {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.confirm-danger {
+  background: var(--error);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.confirm-danger:hover {
+  filter: brightness(1.15);
+}
+
 /* --- track panel --- */
 
 .track-panel {

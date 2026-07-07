@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import type { DragEvent } from 'react';
 import type { Layer, TrackGroup } from '../../core/model/types';
+import ConfirmDialog from '../common/ConfirmDialog';
 import { useEditorStore } from '../../state/editorStore';
 import {
   addLayer,
@@ -50,6 +51,7 @@ export default function TrackPanel() {
     null,
   );
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ index: number; layer: Layer } | null>(null);
 
   const dropOnLayer = (e: DragEvent, item: Extract<DisplayItem, { type: 'layer' }>) => {
     e.preventDefault();
@@ -219,7 +221,7 @@ export default function TrackPanel() {
           className="track-remove"
           onClick={(e) => {
             e.stopPropagation();
-            removeLayer(index);
+            setConfirmDelete({ index, layer });
           }}
           disabled={layers.length <= 1}
           title="Remove track"
@@ -252,6 +254,23 @@ export default function TrackPanel() {
           item.type === 'group' ? renderGroupRow(item.group) : renderLayerRow(item),
         )}
       </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete track"
+          message={`Delete "${confirmDelete.layer.name}"${
+            confirmDelete.layer.notes.length > 0
+              ? ` and its ${confirmDelete.layer.notes.length} note${
+                  confirmDelete.layer.notes.length > 1 ? 's' : ''
+                }`
+              : ''
+          }? This can be undone with Ctrl+Z.`}
+          onConfirm={() => {
+            removeLayer(confirmDelete.index);
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </aside>
   );
 }
