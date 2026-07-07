@@ -30,14 +30,17 @@ export function deserializeProject(json: string): Song {
     throw new Error(`Project version ${parsed.version} is newer than this app supports`);
   }
   const song = parsed.song;
-  // Defensive fixups for hand-edited files.
+  // Defensive fixups for hand-edited and pre-groups files.
   if (!song.tempoTrack?.events?.some((e) => e.type === 'bpm' && e.tick === 0)) {
     throw new Error('Project is missing the initial bpm event');
   }
+  song.groups ??= [];
+  const groupIds = new Set(song.groups.map((g) => g.id));
   for (const layer of song.layers) {
     layer.notes = layer.notes.map((n) => (n.id ? n : createNote({ ...n })));
     layer.notes.sort((a, b) => a.tick - b.tick);
     if (!layer.id) layer.id = newId('layer');
+    if (layer.groupId && !groupIds.has(layer.groupId)) delete layer.groupId;
   }
   return song;
 }

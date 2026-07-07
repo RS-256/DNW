@@ -111,9 +111,27 @@ export interface Note {
   pitch: number;
 }
 
+/**
+ * A track group (folder). Member layers reference it via Layer.groupId and
+ * are kept contiguous in Song.layers by the editing actions. Group volume
+ * multiplies member volumes; group mute/solo combine with member flags.
+ */
+export interface TrackGroup {
+  id: string;
+  name: string;
+  /** Collapse only hides member rows in the track panel. */
+  collapsed: boolean;
+  muted: boolean;
+  solo: boolean;
+  /** 0-100 */
+  volume: number;
+}
+
 export interface Layer {
   id: string;
   name: string;
+  /** Owning group, if any. See TrackGroup. */
+  groupId?: string;
   /** Track color, used for note rendering and onion skin outlines. */
   color: string;
   /** 0-100 */
@@ -135,5 +153,7 @@ export interface Song {
   loop: LoopSettings;
   /** Order = priority (index 0 is drawn on top of other inactive layers). */
   layers: Layer[];
+  /** Track groups (folders). Not exported to NBS. */
+  groups: TrackGroup[];
   instruments: Instrument[];
 }

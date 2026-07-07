@@ -318,6 +318,57 @@ body {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.track-panel-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.track-add.group {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.track-add.group:hover {
+  border-color: var(--accent);
+}
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: #262933;
+  font-size: 12px;
+}
+
+.group-collapse {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.track-row.grouped {
+  padding-left: 20px;
+}
+
 .track-grip {
   color: var(--text-dim);
   cursor: grab;

@@ -6,6 +6,7 @@
 import {
   createLayer,
   createNote,
+  createTrackGroup,
   DEFAULT_PITCH_KEY,
   findNoteIndexAt,
   insertNoteSorted,
@@ -13,7 +14,14 @@ import {
   KEY_MIN,
   newId,
 } from '../core/model/song';
-import type { BpmEvent, Instrument, Layer, Note, TempoEvent } from '../core/model/types';
+import type {
+  BpmEvent,
+  Instrument,
+  Layer,
+  Note,
+  TempoEvent,
+  TrackGroup,
+} from '../core/model/types';
 import { useEditorStore } from './editorStore';
 import { useSongStore } from './songStore';
 
@@ -215,19 +223,75 @@ export function removeLayer(index: number): void {
   editor.setActiveLayer(next);
 }
 
-/** Reorder layers (priority order). Keeps the same layer active. */
-export function moveLayer(from: number, to: number): void {
+/**
+ * Reorder layers (priority order) and assign group membership: the moved
+ * layer adopts `groupId` (undefined = ungrouped). Keeps the same layer
+ * active.
+ */
+export function moveLayer(from: number, to: number, groupId?: string): void {
   const layers = useSongStore.getState().song.layers;
-  if (from === to || !layers[from] || to < 0 || to >= layers.length) return;
+  if (!layers[from] || to < 0 || to >= layers.length) return;
+  if (from === to && layers[from].groupId === groupId) return;
   const activeId = layers[useEditorStore.getState().activeLayer]?.id;
   useSongStore.getState().mutate((draft) => {
     const [layer] = draft.layers.splice(from, 1);
+    layer!.groupId = groupId;
     draft.layers.splice(to, 0, layer!);
   });
   if (activeId) {
     const newIndex = useSongStore.getState().song.layers.findIndex((l) => l.id === activeId);
     if (newIndex !== -1) useEditorStore.setState({ activeLayer: newIndex });
   }
+}
+
+// --- track groups ---
+
+/** Create a group containing the active track. */
+export function createGroupWithActiveLayer(): void {
+  const { activeLayer } = useEditorStore.getState();
+  const song = useSongStore.getState().song;
+  if (!song.layers[activeLayer]) return;
+  const group = createTrackGroup(song.groups.length);
+  useSongStore.getState().mutate((draft) => {
+    draft.groups.push(group);
+    draft.layers[activeLayer]!.groupId = group.id;
+  });
+}
+
+export function setGroupProps(
+  groupId: string,
+  props: Partial<Pick<TrackGroup, 'name' | 'collapsed' | 'muted' | 'solo' | 'volume'>>,
+): void {
+  useSongStore.getState().mutate((draft) => {
+    const group = draft.groups.find((g) => g.id === groupId);
+    if (group) Object.assign(group, props);
+  });
+}
+
+/** Dissolve a group. Member tracks stay, just ungrouped. */
+export function deleteGroup(groupId: string): void {
+  useSongStore.getState().mutate((draft) => {
+    const index = draft.groups.findIndex((g) => g.id === groupId);
+    if (index === -1) return;
+    draft.groups.splice(index, 1);
+    for (const layer of draft.layers) {
+      if (layer.groupId === groupId) delete layer.groupId;
+    }
+  });
+}
+
+/**
+ * The `to` index to pass to moveLayer so the layer at `from` lands right
+ * after the group's last member (accounts for the removal shifting indexes).
+ */
+export function groupJoinIndex(groupId: string, from: number): number {
+  const layers = useSongStore.getState().song.layers;
+  let last = -1;
+  layers.forEach((layer, i) => {
+    if (layer.groupId === groupId) last = i;
+  });
+  if (last === -1) return Math.max(0, layers.length - 1);
+  return from <= last ? last : last + 1;
 }
 
 export function renameLayer(index: number, name: string): void {

@@ -2,7 +2,7 @@
  * Factory and query helpers for the Song model.
  * Everything here is a pure function over plain data.
  */
-import type { Instrument, Layer, Note, Song, VanillaInstrumentId } from './types';
+import type { Instrument, Layer, Note, Song, TrackGroup, VanillaInstrumentId } from './types';
 import { VANILLA_INSTRUMENT_IDS } from './types';
 
 /** Note block native playable range (F#3-F#5) expressed in model keys (A0 = 0). */
@@ -84,6 +84,17 @@ export function createLayer(index: number, name?: string): Layer {
   };
 }
 
+export function createTrackGroup(index: number, name?: string): TrackGroup {
+  return {
+    id: newId('group'),
+    name: name ?? `Group ${index + 1}`,
+    collapsed: false,
+    muted: false,
+    solo: false,
+    volume: 100,
+  };
+}
+
 export function createDefaultSong(): Song {
   return {
     meta: { name: '', author: '', originalAuthor: '', description: '' },
@@ -96,6 +107,7 @@ export function createDefaultSong(): Song {
     },
     loop: { enabled: false, startTick: 0, count: 0 },
     layers: [createLayer(0)],
+    groups: [],
     instruments: VANILLA_INSTRUMENT_IDS.map(createVanillaInstrument),
   };
 }

@@ -140,6 +140,48 @@ describe('songActions', () => {
     expect(useEditorStore.getState().selection.has(a.id)).toBe(true);
   });
 
+  it('track groups: create, join via moveLayer, and dissolve', () => {
+    actions.addLayer(); // Track 2 (active)
+    actions.addLayer(); // Track 3 (active)
+    useEditorStore.getState().setActiveLayer(0);
+    actions.createGroupWithActiveLayer();
+    const song1 = useSongStore.getState().song;
+    expect(song1.groups).toHaveLength(1);
+    const groupId = song1.groups[0]!.id;
+    expect(song1.layers[0]!.groupId).toBe(groupId);
+
+    // Track 3 joins the group: lands right after the last member.
+    actions.moveLayer(2, actions.groupJoinIndex(groupId, 2), groupId);
+    const song2 = useSongStore.getState().song;
+    expect(song2.layers.map((l) => [l.name, l.groupId ?? null])).toEqual([
+      ['Track 1', groupId],
+      ['Track 3', groupId],
+      ['Track 2', null],
+    ]);
+
+    // Dragging a member onto an ungrouped row leaves the group.
+    actions.moveLayer(1, 2, undefined);
+    expect(useSongStore.getState().song.layers[2]!.groupId).toBeUndefined();
+
+    actions.deleteGroup(groupId);
+    const song3 = useSongStore.getState().song;
+    expect(song3.groups).toHaveLength(0);
+    expect(song3.layers.every((l) => l.groupId === undefined)).toBe(true);
+  });
+
+  it('group props update and undo like any other mutation', () => {
+    actions.createGroupWithActiveLayer();
+    const groupId = useSongStore.getState().song.groups[0]!.id;
+    actions.setGroupProps(groupId, { muted: true, volume: 40 });
+    const group = useSongStore.getState().song.groups[0]!;
+    expect(group.muted).toBe(true);
+    expect(group.volume).toBe(40);
+    useSongStore.getState().undo();
+    expect(useSongStore.getState().song.groups[0]!.muted).toBe(false);
+    useSongStore.getState().undo();
+    expect(useSongStore.getState().song.groups).toHaveLength(0);
+  });
+
   it('each track remembers its current instrument across switches', () => {
     const editor = useEditorStore.getState();
     editor.setCurrentInstrument(0); // track 1: harp

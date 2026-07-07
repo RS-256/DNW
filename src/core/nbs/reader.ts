@@ -223,6 +223,7 @@ export function readNbs(buffer: ArrayBuffer): Song {
     tempoTrack: { events },
     loop: { enabled: loopEnabled, startTick: loopStart, count: loopCount },
     layers: finalLayers,
+    groups: [],
     instruments: finalInstruments,
   };
 }

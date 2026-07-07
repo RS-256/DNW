@@ -89,10 +89,17 @@ export class AudioEngine {
 
     // Flatten the layers into one tick-ordered list with the per-layer gain
     // baked in. Playback works on this snapshot; edits apply on next start.
-    const anySolo = song.layers.some((l) => l.solo);
+    // Group mute/solo combine with layer flags; group volume multiplies in.
+    const groupById = new Map(song.groups.map((g) => [g.id, g]));
+    const groupOf = (layer: Song['layers'][number]) =>
+      layer.groupId ? groupById.get(layer.groupId) : undefined;
+    const anySolo = song.layers.some((l) => l.solo || groupOf(l)?.solo);
     const flat: FlatNote[] = [];
     song.layers.forEach((layer, layerIndex) => {
-      if (layer.muted || (anySolo && !layer.solo)) return;
+      const group = groupOf(layer);
+      if (layer.muted || group?.muted) return;
+      if (anySolo && !(layer.solo || group?.solo)) return;
+      const groupGain = (group?.volume ?? 100) / 100;
       for (const note of layer.notes) {
         if (note.tick < fromTick) continue;
         const instrument = song.instruments[note.instrument];
@@ -100,7 +107,8 @@ export class AudioEngine {
         flat.push({
           ...note,
           layerIndex,
-          gain: (note.velocity / 100) * (instrument.volume / 100) * (layer.volume / 100),
+          gain:
+            (note.velocity / 100) * (instrument.volume / 100) * (layer.volume / 100) * groupGain,
           pan: Math.max(-1, Math.min(1, note.pan + layer.pan)),
         });
       }
