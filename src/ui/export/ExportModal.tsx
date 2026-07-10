@@ -24,6 +24,8 @@ import {
 } from '../../core/infinote/allocation';
 import type { AllocationState, ResolvedSlot } from '../../core/infinote/allocation';
 import { DEFAULT_TEMPO_DEPTH, generateLitematic } from '../../core/infinote/generate';
+import { buildManifest, collectVanillaUsage } from '../../core/infinote/manifest';
+import type { ManifestSlotRow } from '../../core/infinote/manifest';
 import {
   buildResourcePack,
   collectManagedInstruments,
@@ -234,6 +236,30 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         );
         await webAdapter.saveFile(`${base}_resources.zip`, zip.slice().buffer, ZIP_FILTER);
       }
+    }
+
+    if (litOptions.writeManifest) {
+      const slotRows: ManifestSlotRow[] = usedSlots.map((slot) => ({
+        blockId:
+          nextAllocation.slots[slotKey(slot.soundId, slot.pitchShift)] ?? slot.suggestedBlock ?? '?',
+        soundId: slot.soundId,
+        pitchShift: slot.pitchShift,
+        count: slot.count,
+      }));
+      const manifest = buildManifest({
+        songName: base,
+        generatedAt: new Date(),
+        options: { ...litOptions, tempoDepth: DEFAULT_TEMPO_DEPTH },
+        placement: result.placement,
+        slotRows,
+        vanillaRows: collectVanillaUsage(current, included),
+        warnings: lines.filter((l) => !l.startsWith('Placed ')),
+      });
+      await webAdapter.saveFile(`${base}_manifest.md`, manifest, {
+        description: 'Export manifest',
+        extensions: ['.md'],
+        mime: 'text/markdown',
+      });
     }
 
     setSummary(lines);

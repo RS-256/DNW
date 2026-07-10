@@ -223,6 +223,66 @@ describe('generateLitematic', () => {
     expect(commands.filter((c) => c.startsWith('tick rate'))).toHaveLength(2);
     expect(commands).toContain('tick rate 20'); // 300bpm * 4 / 60
     expect(commands).toContain('tick rate 10'); // 150bpm * 4 / 60
+
+    // palette signs: one per tier (harp default + harp +24), 1.21 sign format
+    const palette = compound(regions['palette']!);
+    const signs = palette['TileEntities']!;
+    if (signs.type !== 'list') throw new Error('no palette tile entities');
+    expect(signs.value).toHaveLength(2);
+    const labels = signs.value.map((t) => {
+      const front = compound(compound(t)['front_text']!);
+      const messages = front['messages']!;
+      if (messages.type !== 'list') throw new Error('no messages');
+      return messages.value.map((m) => (m.type === 'string' ? m.value : ''));
+    });
+    expect(labels).toContainEqual(['harp', 'default', '', '']);
+    expect(labels).toContainEqual(['harp', '+24', '', '']);
+    expect(compound(signs.value[0]!)['id']).toEqual({ type: 'string', value: 'minecraft:sign' });
+  });
+});
+
+describe('manifest', () => {
+  it('renders settings, tracks, mappings and error report', async () => {
+    const song = createDefaultSong();
+    song.meta.name = 'manifested';
+    song.layers[0]!.name = 'lead';
+    addNote(song, 0, 0, 45, 100);
+    addNote(song, 0, 1, 58, 70);
+    const allocation = emptyAllocation();
+    allocation.slots[slotKey('minecraft:block.note_block.harp', 24)] = 'minecraft:diamond_block';
+
+    const result = generateLitematic(song, [song.layers[0]!.id], allocation, {
+      ...DEFAULT_PLACEMENT,
+      includeRotation: false,
+      paletteRegion: 'none',
+      tempoDepth: 50,
+    });
+
+    const { buildManifest, collectVanillaUsage } = await import('./manifest');
+    const included = new Set([song.layers[0]!.id]);
+    const md = buildManifest({
+      songName: 'manifested',
+      generatedAt: new Date('2026-07-11T12:00:00'),
+      options: { ...DEFAULT_PLACEMENT, includeRotation: false, paletteRegion: 'none', tempoDepth: 50 },
+      placement: result.placement,
+      slotRows: [
+        {
+          blockId: 'minecraft:diamond_block',
+          soundId: 'minecraft:block.note_block.harp',
+          pitchShift: 24,
+          count: 1,
+        },
+      ],
+      vanillaRows: collectVanillaUsage(song, included),
+      warnings: ['sample warning'],
+    });
+
+    expect(md).toContain('# manifested — litematic export manifest');
+    expect(md).toContain('| 1 | lead | below | 2 |');
+    expect(md).toContain('| minecraft:diamond_block | minecraft:block.note_block.harp | +24 | 1 |');
+    expect(md).toContain('| minecraft:dirt | harp | 1 |');
+    expect(md).toContain('- sample warning');
+    expect(md).toContain('2026-07-11');
   });
 });
 

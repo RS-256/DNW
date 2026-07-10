@@ -18,6 +18,7 @@ export interface LitematicUiOptions {
   firstDepth: number;
   spacing: number;
   paletteRegion: PaletteRegionMode;
+  writeManifest: boolean;
 }
 
 export const DEFAULT_LITEMATIC_OPTIONS: LitematicUiOptions = {
@@ -28,6 +29,7 @@ export const DEFAULT_LITEMATIC_OPTIONS: LitematicUiOptions = {
   firstDepth: 2,
   spacing: 3,
   paletteRegion: 'song',
+  writeManifest: true,
 };
 
 export interface LitematicSettingsProps {
@@ -112,6 +114,17 @@ export default function LitematicSettings({
           value={options.spacing}
           onChange={(e) => set('spacing', Math.max(3, Math.round(Number(e.target.value) || 3)))}
         />
+      </label>
+      <label
+        className="lit-row"
+        title="Write a markdown reference sheet (block/sound/pitch tables, track depths, dB errors)"
+      >
+        <input
+          type="checkbox"
+          checked={options.writeManifest}
+          onChange={(e) => set('writeManifest', e.target.checked)}
+        />
+        <span>Write manifest (.md)</span>
       </label>
       <label className="lit-row">
         <span>Palette region</span>

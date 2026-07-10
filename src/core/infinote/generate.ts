@@ -11,7 +11,7 @@ import type { Song } from '../model/types';
 import { VANILLA_BASE_BLOCKS, songLength } from '../model/song';
 import { bpmToTps } from '../model/tempoMap';
 import type { NbtTag } from '../litematic/nbt';
-import { nByte, nCompound, nInt, nString } from '../litematic/nbt';
+import { nByte, nCompound, nInt, nList, nString } from '../litematic/nbt';
 import type { LitematicRegion } from '../litematic/writer';
 import { RegionBuilder, writeLitematic } from '../litematic/writer';
 import type { AllocationState } from './allocation';
@@ -38,6 +38,8 @@ export interface GenerateResult {
   notesPlaced: number;
   overThreshold: number;
   maxDbError: number;
+  /** Full per-track placement details (consumed by the manifest). */
+  placement: PlacementResult;
 }
 
 function commandBlockEntity(x: number, y: number, z: number, command: string): NbtTag {
@@ -64,6 +66,39 @@ function noteBlockState(instrument: string, note: number) {
     name: 'minecraft:note_block',
     properties: { instrument, note: String(note), powered: 'false' },
   };
+}
+
+/** Sign tile entity (1.21 format, mirrored from signs saved on the target instance). */
+function signEntity(x: number, y: number, z: number, lines: string[]): NbtTag {
+  const text = (messages: string[]) =>
+    nCompound({
+      color: nString('black'),
+      has_glowing_text: nByte(0),
+      messages: nList([0, 1, 2, 3].map((i) => nString(messages[i] ?? ''))),
+    });
+  return nCompound({
+    id: nString('minecraft:sign'),
+    x: nInt(x),
+    y: nInt(y),
+    z: nInt(z),
+    is_waxed: nByte(0),
+    components: nCompound({}),
+    front_text: text(lines),
+    back_text: text([]),
+  });
+}
+
+/** Sign line 1: sound id tail, capped to the 15-char sign line limit. */
+function soundLabel(soundId: string): string {
+  const path = soundId.split(':')[1] ?? soundId;
+  const tail = path.split('.').pop() ?? path;
+  return tail.slice(0, 15);
+}
+
+/** Sign line 2: pitch shift, using the user's 'default' convention for 0. */
+function shiftLabel(pitchShift: number): string {
+  if (pitchShift === 0) return 'default';
+  return pitchShift > 0 ? `+${pitchShift}` : String(pitchShift);
 }
 
 function formatTps(tps: number): string {
@@ -188,7 +223,8 @@ function buildPaletteRegion(columns: PaletteColumn[]): LitematicRegion | null {
   const width = columns.length + (hasSeparator ? 1 : 0);
   const height = Math.max(...columns.map((c) => c.tiers.length)) * 3;
 
-  const builder = new RegionBuilder('palette', { x: -4, y: 0, z: 0 }, { x: 1, y: height, z: width });
+  // x = 0: base block + note block columns; x = 1: wall-sign labels.
+  const builder = new RegionBuilder('palette', { x: -4, y: 0, z: 0 }, { x: 2, y: height, z: width });
   let z = 0;
   columns.forEach((column, i) => {
     if (hasSeparator && i === separatorAt) {
@@ -201,6 +237,13 @@ function buildPaletteRegion(columns: PaletteColumn[]): LitematicRegion | null {
       const y = level * 3;
       builder.set(0, y, z, { name: normalizeId(tier.blockId) });
       builder.set(0, y + 1, z, noteBlockState('harp', 0));
+      builder.set(1, y + 1, z, {
+        name: 'minecraft:birch_wall_sign',
+        properties: { facing: 'east' },
+      });
+      builder.addTileEntity(
+        signEntity(1, y + 1, z, [soundLabel(column.soundId), shiftLabel(tier.pitchShift)]),
+      );
     });
     z++;
   });
@@ -250,5 +293,6 @@ export function generateLitematic(
     notesPlaced,
     overThreshold: placement.overThreshold,
     maxDbError: placement.maxDbError,
+    placement,
   };
 }
