@@ -293,7 +293,10 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
             ×
           </button>
         </div>
-        <div className="export-format-row">
+        <div
+          className="export-format-row"
+          title=".nbs = Note Block Studio project; .litematic = spatial note block structure played by running through it (needs the infinote mod)"
+        >
           <label htmlFor="export-format">Format</label>
           <select
             id="export-format"

@@ -60,7 +60,10 @@ export default function LitematicSettings({
 
   return (
     <div className="lit-settings">
-      <label className="lit-row">
+      <label
+        className="lit-row"
+        title="Which side of the runner the tracks occupy. Above and below sound identical — existing builds use below by visual convention; 'both' alternates tracks between the two sides."
+      >
         <span>Placement side</span>
         <select value={options.side} onChange={(e) => set('side', e.target.value as PlacementSide)}>
           <option value="below">below the runner</option>
@@ -68,15 +71,21 @@ export default function LitematicSettings({
           <option value="both">both (alternating)</option>
         </select>
       </label>
-      <label className="lit-row" title="tp commands also fix yaw/pitch (playback builds); leave off while tuning in-game">
+      <label
+        className="lit-row"
+        title="Append yaw/pitch to every tp so the stereo field is locked during playback. Leave off for tuning sessions, where you may want to look sideways to audition volumes."
+      >
         <input
           type="checkbox"
           checked={options.includeRotation}
           onChange={(e) => set('includeRotation', e.target.checked)}
         />
-        <span>Fix facing in tp commands</span>
+        <span>Fixed facing in tp commands</span>
       </label>
-      <label className="lit-row" title="Multiply note velocity by instrument/track/group volumes, like playback">
+      <label
+        className="lit-row"
+        title="Multiply note velocity by instrument/track/group volumes, like playback does. Turn off if track loudness is tuned purely by layer depth in-game."
+      >
         <input
           type="checkbox"
           checked={options.applyMixerVolumes}
@@ -84,7 +93,10 @@ export default function LitematicSettings({
         />
         <span>Apply mixer volumes</span>
       </label>
-      <label className="lit-row">
+      <label
+        className="lit-row"
+        title="Velocity→loudness curve exponent. 2 ≈ the usual MIDI feel; higher pushes quiet notes further out (stronger dynamics), 1 is linear."
+      >
         <span>Velocity curve α</span>
         <input
           type="number"
@@ -95,7 +107,10 @@ export default function LitematicSettings({
           onChange={(e) => set('alpha', Number(e.target.value) || 2)}
         />
       </label>
-      <label className="lit-row" title="Runner line to the first track's note blocks">
+      <label
+        className="lit-row"
+        title="Blocks from the runner line down to the first track's note blocks. Larger = the whole song plays quieter (top track gain cap 1 − depth/48)."
+      >
         <span>First track depth</span>
         <input
           type="number"
@@ -105,7 +120,10 @@ export default function LitematicSettings({
           onChange={(e) => set('firstDepth', Math.max(2, Math.round(Number(e.target.value) || 2)))}
         />
       </label>
-      <label className="lit-row" title="Vertical distance between consecutive track tiers">
+      <label
+        className="lit-row"
+        title="Vertical distance between consecutive track tiers. 3 = tiers touch (base/note block/air); raise it to spread tracks further apart in volume."
+      >
         <span>Track spacing</span>
         <input
           type="number"
@@ -126,7 +144,10 @@ export default function LitematicSettings({
         />
         <span>Write manifest (.md)</span>
       </label>
-      <label className="lit-row">
+      <label
+        className="lit-row"
+        title="Include a sample rack beside the song start: one labeled column per sound, variants stacked by pitch shift. Use it in-game to audition sounds and as a mapping reference."
+      >
         <span>Palette region</span>
         <select
           value={options.paletteRegion}
@@ -138,7 +159,10 @@ export default function LitematicSettings({
         </select>
       </label>
 
-      <div className="lit-config-head">
+      <div
+        className="lit-config-head"
+        title="Notes outside the vanilla 2-octave range (and custom sounds) each need a base block registered in infinote.json. Assignments are remembered across exports."
+      >
         <span>infinote mappings</span>
         <button type="button" onClick={onImportConfig} title="Seed the block table from your world's infinote.json">
           Import infinote.json
@@ -153,10 +177,12 @@ export default function LitematicSettings({
         <>
           <div className="lit-slot-table">
             <div className="lit-slot-row lit-slot-header">
-              <span>sound</span>
-              <span>shift</span>
-              <span>notes</span>
-              <span>base block</span>
+              <span title="infinote sound id">sound</span>
+              <span title="Pitch shift in semitones (fraction = cents)">shift</span>
+              <span title="Notes in the song using this slot">notes</span>
+              <span title="Block placed under the note block; written to infinote.json">
+                base block
+              </span>
             </div>
             {slots.map((slot) => {
               const key = slotKey(slot.soundId, slot.pitchShift);
