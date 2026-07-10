@@ -1,5 +1,5 @@
 /**
- * Unified export modal (docs/litematic-export-spec.md §9, phase 1).
+ * Unified export modal (docs/litematic-export-spec.md §9).
  *
  * Top: output format pulldown. Left half: draggable track list whose order is
  * the output order (top entry = top NBS layer / shallowest schematic region)
@@ -10,15 +10,43 @@
  * muted track exports it. Unchecked tracks are skipped without leaving a gap
  * in the output order.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
-import type { Layer } from '../../core/model/types';
+import type { Layer, Song } from '../../core/model/types';
 import { writeNbs } from '../../core/nbs/writer';
-import { NBS_FILTER } from '../../core/platform/fileFilters';
+import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
 import { webAdapter } from '../../core/platform/webAdapter';
+import {
+  loadAllocation,
+  saveAllocation,
+  seedFromInfinoteJson,
+  buildInfinoteConfig,
+} from '../../core/infinote/allocation';
+import type { AllocationState, ResolvedSlot } from '../../core/infinote/allocation';
+import { DEFAULT_TEMPO_DEPTH, generateLitematic } from '../../core/infinote/generate';
+import {
+  buildResourcePack,
+  collectManagedInstruments,
+  detectStereoSounds,
+} from '../../core/infinote/resourcepack';
+import { collectSlots, effectiveSoundId, normalizeId, slotKey } from '../../core/infinote/slots';
+import { getSound } from '../../state/persistence';
 import { useSongStore } from '../../state/songStore';
+import LitematicSettings, { DEFAULT_LITEMATIC_OPTIONS } from './LitematicSettings';
+import type { LitematicUiOptions } from './LitematicSettings';
 
-type ExportFormat = 'nbs';
+type ExportFormat = 'nbs' | 'litematic';
+
+const LITEMATIC_FILTER = {
+  description: 'Litematica schematic',
+  extensions: ['.litematic'],
+  mime: 'application/octet-stream',
+};
+const ZIP_FILTER = {
+  description: 'Resource pack',
+  extensions: ['.zip'],
+  mime: 'application/zip',
+};
 
 interface TrackEntry {
   layerId: string;
@@ -34,12 +62,24 @@ function initialEntries(): TrackEntry[] {
   }));
 }
 
+function orderedIncludedLayers(song: Song, entries: TrackEntry[]): Layer[] {
+  const byId = new Map(song.layers.map((l) => [l.id, l]));
+  return entries
+    .filter((e) => e.included)
+    .map((e) => byId.get(e.layerId))
+    .filter((l): l is Layer => l !== undefined);
+}
+
 export default function ExportModal({ onClose }: { onClose: () => void }) {
   const song = useSongStore((s) => s.song);
   const [format, setFormat] = useState<ExportFormat>('nbs');
   const [entries, setEntries] = useState<TrackEntry[]>(initialEntries);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string[] | null>(null);
+  const [litOptions, setLitOptions] = useState<LitematicUiOptions>(DEFAULT_LITEMATIC_OPTIONS);
+  const [allocation, setAllocation] = useState<AllocationState>(loadAllocation);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -56,6 +96,15 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const groupMuted = new Map(song.groups.map((g) => [g.id, g.muted]));
   const isMuted = (layer: Layer) =>
     layer.muted || (layer.groupId ? (groupMuted.get(layer.groupId) ?? false) : false);
+
+  const includedIds = useMemo(
+    () => new Set(entries.filter((e) => e.included).map((e) => e.layerId)),
+    [entries],
+  );
+  const slots = useMemo(
+    () => [...collectSlots(song, includedIds).values()],
+    [song, includedIds],
+  );
 
   const setIncluded = (index: number, included: boolean) =>
     setEntries((prev) => prev.map((e, i) => (i === index ? { ...e, included } : e)));
@@ -74,22 +123,136 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
     setDragIndex(null);
   };
 
-  const onExport = () => {
+  const setSlotBlock = (key: string, blockId: string) => {
+    setAllocation((prev) => {
+      const next = { ...prev, slots: { ...prev.slots, [key]: blockId } };
+      if (blockId.trim() === '') delete next.slots[key];
+      saveAllocation(next);
+      return next;
+    });
+  };
+
+  const onImportConfig = () => {
     setError(null);
     void (async () => {
+      const file = await webAdapter.openFile([
+        { ...PROJECT_FILTER, description: 'infinote config' },
+      ]);
+      if (!file) return;
+      setAllocation((prev) => {
+        const next: AllocationState = {
+          slots: { ...prev.slots },
+          imported: { ...prev.imported },
+        };
+        const count = seedFromInfinoteJson(next, new TextDecoder().decode(file.data));
+        saveAllocation(next);
+        setImportStatus(`Imported ${count} mappings from ${file.name}.`);
+        return next;
+      });
+    })().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  };
+
+  const exportNbs = async (current: Song, layers: Layer[]): Promise<boolean> => {
+    const base = current.meta.name.trim() || 'untitled';
+    return webAdapter.saveFile(`${base}.nbs`, writeNbs({ ...current, layers }), NBS_FILTER);
+  };
+
+  const exportLitematic = async (current: Song, layers: Layer[]): Promise<boolean> => {
+    const layerIds = layers.map((l) => l.id);
+    const included = new Set(layerIds);
+    const usedSlots = [...collectSlots(current, included).values()];
+
+    // Commit suggestions and validate that every slot has a base block.
+    const resolved: ResolvedSlot[] = [];
+    const nextAllocation: AllocationState = {
+      slots: { ...allocation.slots },
+      imported: { ...allocation.imported },
+    };
+    const missing: string[] = [];
+    for (const slot of usedSlots) {
+      const key = slotKey(slot.soundId, slot.pitchShift);
+      const block = nextAllocation.slots[key] ?? slot.suggestedBlock;
+      if (!block || block.trim() === '') {
+        missing.push(key);
+        continue;
+      }
+      nextAllocation.slots[key] = normalizeId(block);
+      resolved.push({ soundId: slot.soundId, pitchShift: slot.pitchShift, blockId: block });
+    }
+    if (missing.length > 0) {
+      throw new Error(`Assign base blocks first: ${missing.join(', ')}`);
+    }
+    saveAllocation(nextAllocation);
+    setAllocation(nextAllocation);
+
+    const result = generateLitematic(current, layerIds, nextAllocation, {
+      ...litOptions,
+      tempoDepth: DEFAULT_TEMPO_DEPTH,
+    });
+
+    const base = current.meta.name.trim() || 'untitled';
+    const lines: string[] = [
+      `Placed ${result.notesPlaced} notes` +
+        (result.maxDbError > 0 ? ` (max placement error ${result.maxDbError.toFixed(2)} dB)` : ''),
+      ...result.warnings,
+    ];
+
+    const saved = await webAdapter.saveFile(
+      `${base}.litematic`,
+      result.file.slice().buffer,
+      LITEMATIC_FILTER,
+    );
+    if (!saved) return false;
+
+    if (resolved.length > 0) {
+      const { json, conflicts } = buildInfinoteConfig(nextAllocation, resolved);
+      lines.push(...conflicts.map((c) => `Config conflict: ${c}`));
+      await webAdapter.saveFile('infinote.json', json, {
+        ...PROJECT_FILTER,
+        description: 'infinote config',
+      });
+    }
+
+    const managed = collectManagedInstruments(current, included);
+    if (managed.length > 0) {
+      const sounds = [];
+      for (const inst of managed) {
+        const data = inst.soundSourceId ? await getSound(inst.soundSourceId) : undefined;
+        if (!data) {
+          lines.push(`Sample for '${inst.name}' not found in the app storage; skipped.`);
+          continue;
+        }
+        sounds.push({ soundId: effectiveSoundId(inst), data: new Uint8Array(data), raw: data });
+      }
+      if (sounds.length > 0) {
+        lines.push(
+          ...(await detectStereoSounds(sounds.map((s) => ({ name: s.soundId, data: s.raw })))),
+        );
+        const zip = buildResourcePack(
+          sounds.map((s) => ({ soundId: s.soundId, data: s.data })),
+          `DNW sounds for ${base}`,
+        );
+        await webAdapter.saveFile(`${base}_resources.zip`, zip.slice().buffer, ZIP_FILTER);
+      }
+    }
+
+    setSummary(lines);
+    return true;
+  };
+
+  const onExport = () => {
+    setError(null);
+    setSummary(null);
+    void (async () => {
       const current = useSongStore.getState().song;
-      const byId = new Map(current.layers.map((l) => [l.id, l]));
-      const layers = entries
-        .filter((e) => e.included)
-        .map((e) => byId.get(e.layerId))
-        .filter((l): l is Layer => l !== undefined);
+      const layers = orderedIncludedLayers(current, entries);
       if (layers.length === 0) {
         setError('No tracks selected.');
         return;
       }
-      const base = current.meta.name.trim() || 'untitled';
-      const saved = await webAdapter.saveFile(`${base}.nbs`, writeNbs({ ...current, layers }), NBS_FILTER);
-      if (saved) onClose();
+      const saved =
+        format === 'nbs' ? await exportNbs(current, layers) : await exportLitematic(current, layers);
+      if (saved && format === 'nbs') onClose();
     })().catch((err) => setError(err instanceof Error ? err.message : String(err)));
   };
 
@@ -112,9 +275,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setFormat(e.target.value as ExportFormat)}
           >
             <option value="nbs">.nbs (Note Block Studio)</option>
-            <option value="litematic" disabled>
-              .litematic (not yet implemented)
-            </option>
+            <option value="litematic">.litematic (infinote runner structure)</option>
           </select>
         </div>
         <div className="export-body">
@@ -134,7 +295,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
                     className="track-grip"
                     draggable
                     onDragStart={() => setDragIndex(index)}
-                    title="Drag to reorder (top = top layer in the output)"
+                    title="Drag to reorder (top = top layer / closest to the runner)"
                   >
                     ⋮⋮
                   </span>
@@ -157,7 +318,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
             })}
           </div>
           <div className="export-settings">
-            {format === 'nbs' && (
+            {format === 'nbs' ? (
               <>
                 <p>No format-specific settings.</p>
                 <p>
@@ -165,13 +326,30 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
                   instrument sound ids and extra time-signature changes are not stored in .nbs.
                 </p>
               </>
+            ) : (
+              <LitematicSettings
+                options={litOptions}
+                setOptions={setLitOptions}
+                slots={slots}
+                allocation={allocation}
+                setSlotBlock={setSlotBlock}
+                onImportConfig={onImportConfig}
+                importStatus={importStatus}
+              />
             )}
           </div>
         </div>
         {error && <span className="file-menu-error">{error}</span>}
+        {summary && (
+          <div className="export-summary">
+            {summary.map((line, i) => (
+              <p key={i}>{line}</p>
+            ))}
+          </div>
+        )}
         <div className="confirm-buttons">
           <button className="confirm-cancel" onClick={onClose}>
-            Cancel
+            {summary ? 'Close' : 'Cancel'}
           </button>
           <button className="export-confirm" onClick={onExport} disabled={includedCount === 0}>
             Export {includedCount}/{entries.length} track{includedCount === 1 ? '' : 's'}

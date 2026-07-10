@@ -833,3 +833,135 @@ body {
   opacity: 0.5;
   cursor: default;
 }
+
+.export-summary {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.export-summary p {
+  margin: 0 0 4px;
+}
+
+/* --- litematic settings pane --- */
+
+.lit-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+}
+
+.lit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.lit-row > span:first-child {
+  flex: 1;
+}
+
+.lit-row select,
+.lit-row input[type='number'] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.lit-row input[type='number'] {
+  width: 56px;
+}
+
+.lit-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.lit-config-head button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.lit-config-head button:hover {
+  border-color: var(--accent);
+}
+
+.lit-import-status,
+.lit-slots-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.lit-slots-warning {
+  margin: 0;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.lit-slot-table {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.lit-slot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 36px 32px minmax(0, 1.3fr);
+  gap: 4px;
+  align-items: center;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lit-slot-row:last-child {
+  border-bottom: none;
+}
+
+.lit-slot-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-slot-header {
+  color: var(--text-dim);
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+}
+
+.lit-slot-row input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.lit-slot-row input.missing {
+  border-color: var(--error);
+}
