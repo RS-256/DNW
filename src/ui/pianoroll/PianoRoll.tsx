@@ -32,8 +32,23 @@ const DRAG_THRESHOLD_PX = 4;
 
 type DragState =
   | { type: 'none' }
-  | { type: 'maybe-add'; tick: number; key: number; startX: number; startY: number }
-  | { type: 'box'; startX: number; startY: number; curX: number; curY: number }
+  | {
+      type: 'maybe-add';
+      tick: number;
+      key: number;
+      startX: number;
+      startY: number;
+      additive: boolean;
+    }
+  | {
+      type: 'box';
+      startX: number;
+      startY: number;
+      curX: number;
+      curY: number;
+      /** Selection to add to (Ctrl held); undefined replaces. */
+      base?: ReadonlySet<string>;
+    }
   | {
       type: 'move';
       notes: Note[];
@@ -226,8 +241,17 @@ export default function PianoRoll() {
       }
 
       // Right press: box selection (click without drag selects the one cell).
+      // Ctrl adds to the existing selection instead of replacing it.
       if (e.button === 2) {
-        dragRef.current = { type: 'box', startX: px.x, startY: px.y, curX: px.x, curY: px.y };
+        dragRef.current = {
+          type: 'box',
+          startX: px.x,
+          startY: px.y,
+          curX: px.x,
+          curY: px.y,
+          base:
+            e.ctrlKey || e.metaKey ? new Set(useEditorStore.getState().selection) : undefined,
+        };
         drawOverlay();
         return;
       }
@@ -246,6 +270,7 @@ export default function PianoRoll() {
           key: cell.key,
           startX: px.x,
           startY: px.y,
+          additive: e.ctrlKey || e.metaKey,
         };
       } else {
         const note = layer.notes[hitIndex]!;
@@ -283,6 +308,7 @@ export default function PianoRoll() {
             startY: drag.startY,
             curX: px.x,
             curY: px.y,
+            base: drag.additive ? new Set(useEditorStore.getState().selection) : undefined,
           };
           drawOverlay();
         }
@@ -296,6 +322,7 @@ export default function PianoRoll() {
           Math.floor(vp.xToTick(Math.max(0, drag.curX))),
           vp.yToKey(drag.startY),
           vp.yToKey(drag.curY),
+          drag.base,
         );
         drawOverlay();
         return;
@@ -328,6 +355,7 @@ export default function PianoRoll() {
           Math.floor(vp.xToTick(Math.max(0, drag.curX))),
           vp.yToKey(drag.startY),
           vp.yToKey(drag.curY),
+          drag.base,
         );
       } else if (drag.type === 'move' && drag.moved) {
         actions.moveSelection(drag.dTick, drag.dKey);
@@ -352,9 +380,21 @@ export default function PianoRoll() {
 
     const onContextMenu = (e: Event) => e.preventDefault();
 
+    // Left double-click on a note deletes it.
+    const onDoubleClick = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const rect = container.getBoundingClientRect();
+      if (e.clientY - rect.top < TEMPO_LANE_HEIGHT) return;
+      const cell = toCell(toAreaPx(e));
+      if (!cell) return;
+      e.preventDefault();
+      actions.removeNoteAt(cell.tick, cell.key);
+    };
+
     container.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onWindowMouseMove);
     window.addEventListener('mouseup', onWindowMouseUp);
+    container.addEventListener('dblclick', onDoubleClick);
     container.addEventListener('wheel', onWheel, { passive: false });
     container.addEventListener('contextmenu', onContextMenu);
 
@@ -367,6 +407,7 @@ export default function PianoRoll() {
       container.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onWindowMouseMove);
       window.removeEventListener('mouseup', onWindowMouseUp);
+      container.removeEventListener('dblclick', onDoubleClick);
       container.removeEventListener('wheel', onWheel);
       container.removeEventListener('contextmenu', onContextMenu);
     };

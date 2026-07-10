@@ -194,6 +194,18 @@ describe('songActions', () => {
     expect(useEditorStore.getState().currentInstrument).toBe(1); // back to bass
   });
 
+  it('selectBox replaces the selection, or adds to a base set when given', () => {
+    const a = actions.addNote(0, 45)!;
+    actions.addNote(5, 47);
+    actions.addNote(10, 49);
+    actions.selectBox(4, 6, 40, 50); // only the tick-5 note
+    expect(useEditorStore.getState().selection.size).toBe(1);
+    actions.selectBox(9, 11, 40, 50, new Set([a.id])); // additive: tick-10 note + base
+    const selection = useEditorStore.getState().selection;
+    expect(selection.size).toBe(2);
+    expect(selection.has(a.id)).toBe(true);
+  });
+
   it('fadeSelection ramps velocity across the selection tick span', () => {
     actions.addNote(0, 45);
     actions.addNote(5, 46);

@@ -57,11 +57,13 @@ All v1 features above are implemented. See the Roadmap for what comes next.
 | Input | Action |
 | --- | --- |
 | Left click (empty cell) | Add note |
+| Left double-click (on note) | Delete note |
 | Left drag (empty cell) | Box selection |
 | Left drag (on note) | Move selection |
 | Right click / right drag | Box selection (then copy / delete / bulk edit / fade via the side panel) |
+| Ctrl+box selection | Add to the existing selection |
 | Middle click | Park the playhead (playback starts from here) |
-| Ctrl+click | Toggle note selection |
+| Ctrl+click (on note) | Toggle note selection |
 | Wheel / Shift+wheel | Scroll vertically / horizontally |
 | Ctrl+wheel | Zoom (notes stay square) |
 | Space | Play from the playhead / stop |
@@ -93,13 +95,28 @@ Dependencies flow one way: `ui → state → core`.
 Minecraft assets (sounds, textures) are **not** bundled; they are fetched from
 Mojang's official CDN on first use and cached locally in IndexedDB.
 
-### Asset proxy note
+### Asset sources (CORS)
 
-Mojang's binary CDNs (`resources.download.minecraft.net` for sounds,
-`piston-data.mojang.com` for the client jar) send no CORS headers, so the
-browser cannot fetch them directly. The dev server proxies them as `/mc-res`
-and `/mc-data` (see `vite.config.ts`). Production hosting needs equivalent
-rewrites (e.g. Netlify/Vercel proxy rules); a future Tauri build can fetch
-directly since it is not subject to CORS. As a fallback, block textures can
-also be imported by dropping a Minecraft client `.jar` onto the
-"Get textures" button.
+Both asset types are fetched from hosts that send `Access-Control-Allow-Origin:
+*`, so **no proxy is needed** in dev or on static hosting:
+
+- **Sounds** — the vanilla note block `.ogg` samples come from the community
+  mirror [`InventivetalentDev/minecraft-assets`](https://github.com/InventivetalentDev/minecraft-assets)
+  served over jsDelivr. (Mojang's own object store,
+  `resources.download.minecraft.net`, sends no CORS header, which is why the
+  mirror is used.) Override the base with `VITE_MC_SOUND_BASE`.
+- **Textures** — the client jar is downloaded directly from
+  `piston-data.mojang.com`, which does send CORS headers. Override the host
+  with `VITE_MC_DATA_BASE`. As a fallback, block textures can also be imported
+  by dropping a Minecraft client `.jar` onto the "Get textures" button.
+
+## Deployment (GitHub Pages)
+
+Pushing to `main` builds and deploys the app via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). One-time setup:
+enable Pages under *Settings → Pages → Build and deployment → Source → GitHub
+Actions*. That's it — sounds and textures work out of the box.
+
+The production `base` path is `/DNW/` (set in `vite.config.ts`); if you fork
+under a different repo name, update it to `/<repo>/`. A future Tauri build needs
+no CORS handling at all.

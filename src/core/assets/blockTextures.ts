@@ -2,14 +2,18 @@
  * Block texture acquisition for the note skin feature.
  *
  * Block textures are not in the asset index — they live inside the client
- * jar. The jar (~25MB) is downloaded once through the dev proxy (or provided
- * by the user via drag & drop), the `assets/minecraft/textures/block/*.png`
- * entries are extracted with fflate, and each PNG is cached in IndexedDB.
+ * jar. The jar (~25MB) is downloaded once (or provided by the user via drag &
+ * drop), the `assets/minecraft/textures/block/*.png` entries are extracted
+ * with fflate, and each PNG is cached in IndexedDB.
+ *
+ * The jar host (piston-data.mojang.com) sends `Access-Control-Allow-Origin: *`,
+ * so it is fetched directly in both dev and production — no proxy needed.
+ * Override the host with `VITE_MC_DATA_BASE` if required.
  */
 import { unzipSync } from 'fflate';
 
 const VERSION_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest.json';
-const DATA_BASE = '/mc-data';
+const DATA_BASE = import.meta.env.VITE_MC_DATA_BASE || 'https://piston-data.mojang.com';
 const TEXTURE_PREFIX = 'assets/minecraft/textures/block/';
 
 export interface TextureStore {

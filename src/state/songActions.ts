@@ -147,8 +147,17 @@ export function selectAll(): void {
   useEditorStore.getState().setSelection(layer.notes.map((n) => n.id));
 }
 
-/** Select all notes inside a tick/key box (inclusive). */
-export function selectBox(tick0: number, tick1: number, key0: number, key1: number): void {
+/**
+ * Select all notes inside a tick/key box (inclusive). When `base` is given
+ * (Ctrl held), the box adds to that selection instead of replacing it.
+ */
+export function selectBox(
+  tick0: number,
+  tick1: number,
+  key0: number,
+  key1: number,
+  base?: ReadonlySet<string>,
+): void {
   const layer = activeLayerOf(useSongStore.getState().song);
   if (!layer) return;
   const [tMin, tMax] = tick0 <= tick1 ? [tick0, tick1] : [tick1, tick0];
@@ -156,7 +165,7 @@ export function selectBox(tick0: number, tick1: number, key0: number, key1: numb
   const ids = layer.notes
     .filter((n) => n.tick >= tMin && n.tick <= tMax && n.key >= kMin && n.key <= kMax)
     .map((n) => n.id);
-  useEditorStore.getState().setSelection(ids);
+  useEditorStore.getState().setSelection(base ? [...base, ...ids] : ids);
 }
 
 export function copySelection(): void {
