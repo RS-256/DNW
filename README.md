@@ -41,6 +41,15 @@ browser, no install, no backend.
 
 - Native projects (`.dnw.json`) with open / save
 - NBS file support: reads v0–v5, writes v5
+- MIDI import (`.mid` / `.midi`): note lengths are ignored — each note-on
+  becomes one single-tick note (note blocks cannot sustain). MIDI has no
+  gt/quarter concept, so an import modal asks for `tickPerQuarter`
+  (default 8) and checks every event against the resulting game-tick grid:
+  if the value would force rounding (e.g. 1/64 notes or triplets at 8), a
+  red warning shows how many events are affected and suggests the smallest
+  lossless value; importing anyway snaps those events to the nearest tick.
+  One layer per MIDI track, tempo / time-signature changes go to the tempo
+  track, and GM percussion (channel 10) maps to basedrum / snare / hat
 - Autosave to IndexedDB — the last song is restored on launch
 - Unified export modal: pick a format, reorder tracks by drag, include /
   exclude tracks per export
@@ -116,7 +125,7 @@ dev or on static hosting. Override the hosts with `VITE_MC_SOUND_BASE` /
 
 - Live connection to a server (WebSocket / RCON) for auditioning without
   exporting
-- MIDI import, datapack export
+- Datapack export
 - Automatic stereo→mono downmix for custom samples
 - Desktop packaging via Tauri
 
@@ -133,7 +142,7 @@ npm run lint    # lint
 
 Dependencies flow one way: `ui → state → core`.
 
-- `src/core` — UI-agnostic domain logic (data model, NBS I/O, audio engine,
+- `src/core` — UI-agnostic domain logic (data model, NBS / MIDI I/O, audio engine,
   litematic / NBT writer, infinote placement & config, platform adapters).
   Must not import React or the upper layers; enforced by ESLint.
 - `src/state` — zustand stores, undo/redo history (immer patches).
