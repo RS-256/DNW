@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import { zipSync } from 'fflate';
+import { fetchVanillaSound } from '../../core/assets/vanillaSounds';
+import { renderSongToWav } from '../../core/audio/renderWav';
 import type { Layer, Song } from '../../core/model/types';
 import { writeNbs } from '../../core/nbs/writer';
 import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
@@ -38,8 +40,14 @@ import { useSongStore } from '../../state/songStore';
 import LitematicSettings, { DEFAULT_LITEMATIC_OPTIONS } from './LitematicSettings';
 import type { LitematicUiOptions } from './LitematicSettings';
 
-type ExportFormat = 'nbs' | 'litematic';
+type ExportFormat = 'nbs' | 'litematic' | 'wav';
+type WavSampleRate = 44100 | 48000;
 
+const WAV_FILTER = {
+  description: 'WAV audio',
+  extensions: ['.wav'],
+  mime: 'audio/wav',
+};
 const LITEMATIC_FILTER = {
   description: 'Litematica schematic',
   extensions: ['.litematic'],
@@ -81,6 +89,8 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string[] | null>(null);
   const [litOptions, setLitOptions] = useState<LitematicUiOptions>(DEFAULT_LITEMATIC_OPTIONS);
+  const [wavSampleRate, setWavSampleRate] = useState<WavSampleRate>(48000);
+  const [busy, setBusy] = useState(false);
   const [allocation, setAllocation] = useState<AllocationState>(loadAllocation);
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
@@ -158,6 +168,33 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const exportNbs = async (current: Song, layers: Layer[]): Promise<boolean> => {
     const base = current.meta.name.trim() || 'untitled';
     return webAdapter.saveFile(`${base}.nbs`, writeNbs({ ...current, layers }), NBS_FILTER);
+  };
+
+  const exportWav = async (current: Song, layers: Layer[]): Promise<boolean> => {
+    const result = await renderSongToWav(current, layers, {
+      sampleRate: wavSampleRate,
+      loadSample: (inst) => {
+        if (inst.isVanilla && inst.vanillaId) return fetchVanillaSound(inst.vanillaId);
+        if (inst.soundSourceId) return getSound(inst.soundSourceId);
+        return Promise.resolve(undefined);
+      },
+    });
+    const base = current.meta.name.trim() || 'untitled';
+    if (!(await webAdapter.saveFile(`${base}.wav`, result.wav, WAV_FILTER))) return false;
+
+    const minutes = Math.floor(result.durationSec / 60);
+    const seconds = (result.durationSec % 60).toFixed(1).padStart(4, '0');
+    setSummary([
+      `Rendered ${minutes}:${seconds} at ${wavSampleRate / 1000} kHz, 16-bit stereo.`,
+      ...(result.normalizedDb > 0
+        ? [
+            `Mix peaked ${result.normalizedDb.toFixed(1)} dB above full scale; ` +
+              'the whole file was attenuated to prevent clipping.',
+          ]
+        : []),
+      ...result.warnings,
+    ]);
+    return true;
   };
 
   const exportLitematic = async (current: Song, layers: Layer[]): Promise<boolean> => {
@@ -281,6 +318,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const onExport = () => {
     setError(null);
     setSummary(null);
+    setBusy(true);
     void (async () => {
       const current = useSongStore.getState().song;
       const layers = orderedIncludedLayers(current, entries);
@@ -289,9 +327,15 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         return;
       }
       const saved =
-        format === 'nbs' ? await exportNbs(current, layers) : await exportLitematic(current, layers);
+        format === 'nbs'
+          ? await exportNbs(current, layers)
+          : format === 'wav'
+            ? await exportWav(current, layers)
+            : await exportLitematic(current, layers);
       if (saved && format === 'nbs') onClose();
-    })().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    })()
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusy(false));
   };
 
   const includedCount = entries.filter((e) => e.included).length;
@@ -307,7 +351,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
         <div
           className="export-format-row"
-          title=".nbs = Note Block Studio project; .litematic = spatial note block structure played by running through it (needs the infinote mod)"
+          title=".nbs = Note Block Studio project; .litematic = spatial note block structure played by running through it (needs the infinote mod); .wav = audio file rendered with the same mix as in-app playback"
         >
           <label htmlFor="export-format">Format</label>
           <select
@@ -317,6 +361,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
           >
             <option value="nbs">.nbs (Note Block Studio)</option>
             <option value="litematic">.litematic (infinote runner structure)</option>
+            <option value="wav">.wav (audio render)</option>
           </select>
         </div>
         <div className="export-body">
@@ -367,6 +412,28 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
                   instrument sound ids and extra time-signature changes are not stored in .nbs.
                 </p>
               </>
+            ) : format === 'wav' ? (
+              <div className="lit-settings">
+                <label
+                  className="lit-row"
+                  title="44.1 kHz is the audio-CD standard; 48 kHz is the video/production standard. Both are fine for sharing."
+                >
+                  <span>Sample rate</span>
+                  <select
+                    value={wavSampleRate}
+                    onChange={(e) => setWavSampleRate(Number(e.target.value) as WavSampleRate)}
+                  >
+                    <option value={48000}>48 kHz</option>
+                    <option value={44100}>44.1 kHz</option>
+                  </select>
+                </label>
+                <p>
+                  Renders the selected tracks offline with the exact playback mix (16-bit stereo).
+                  Checked tracks are always audible — mute/solo flags are ignored. Loop settings
+                  are ignored; the song plays once. If the mix peaks above full scale it is
+                  attenuated to prevent clipping.
+                </p>
+              </div>
             ) : (
               <LitematicSettings
                 options={litOptions}
@@ -392,8 +459,14 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
           <button className="confirm-cancel" onClick={onClose}>
             {summary ? 'Close' : 'Cancel'}
           </button>
-          <button className="export-confirm" onClick={onExport} disabled={includedCount === 0}>
-            Export {includedCount}/{entries.length} track{includedCount === 1 ? '' : 's'}
+          <button
+            className="export-confirm"
+            onClick={onExport}
+            disabled={includedCount === 0 || busy}
+          >
+            {busy
+              ? 'Rendering…'
+              : `Export ${includedCount}/${entries.length} track${includedCount === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

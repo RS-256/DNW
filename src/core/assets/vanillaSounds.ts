@@ -46,5 +46,7 @@ export function fetchVanillaSound(id: VanillaInstrumentId): Promise<ArrayBuffer>
     promise.catch(() => soundPromises.delete(id));
     soundPromises.set(id, promise);
   }
-  return promise;
+  // Hand out a copy: decodeAudioData detaches the buffer it is given, and
+  // there are multiple consumers (realtime playback, WAV export).
+  return promise.then((data) => data.slice(0));
 }
