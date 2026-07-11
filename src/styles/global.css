@@ -725,14 +725,15 @@ body {
 /* --- export modal --- */
 
 .export-dialog {
-  width: min(600px, 92vw);
+  width: min(920px, 94vw);
+  max-height: 88vh;
 }
 
 .export-format-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 10px;
+  font-size: 14px;
 }
 
 .export-format-row select {
@@ -740,7 +741,8 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 6px 10px;
+  font-size: 14px;
 }
 
 .export-body {
@@ -754,17 +756,17 @@ body {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
-  max-height: 320px;
+  max-height: 56vh;
   overflow-y: auto;
 }
 
 .export-track-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .export-track-row:last-child {
@@ -776,8 +778,8 @@ body {
 }
 
 .export-color-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
   flex-shrink: 0;
 }
@@ -791,16 +793,16 @@ body {
 }
 
 .export-muted-tag {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   border: 1px solid var(--border);
   border-radius: 3px;
-  padding: 0 3px;
+  padding: 0 4px;
   flex-shrink: 0;
 }
 
 .export-note-count {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -808,7 +810,7 @@ body {
 .export-settings {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -838,9 +840,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
-  max-height: 120px;
+  max-height: 140px;
   overflow-y: auto;
 }
 
@@ -853,15 +855,15 @@ body {
 .lit-settings {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   color: var(--text);
 }
 
 .lit-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 14px;
 }
 
 .lit-row > span:first-child {
@@ -874,20 +876,20 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 14px;
 }
 
 .lit-row input[type='number'] {
-  width: 56px;
+  width: 64px;
 }
 
 .lit-config-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: 10px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -896,9 +898,9 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .lit-config-head button:hover {
@@ -908,30 +910,30 @@ body {
 .lit-import-status,
 .lit-slots-empty {
   margin: 0;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-dim);
 }
 
 .lit-slots-warning {
   margin: 0;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--error);
 }
 
 .lit-slot-table {
   border: 1px solid var(--border);
   border-radius: 6px;
-  max-height: 180px;
+  max-height: 240px;
   overflow-y: auto;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .lit-slot-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 36px 32px minmax(0, 1.3fr);
-  gap: 4px;
+  grid-template-columns: minmax(0, 1.4fr) 44px 40px minmax(0, 1.3fr);
+  gap: 6px;
   align-items: center;
-  padding: 3px 6px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -957,8 +959,8 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 2px 5px;
-  font-size: 11px;
+  padding: 3px 6px;
+  font-size: 13px;
   min-width: 0;
 }
 
