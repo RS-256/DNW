@@ -57,42 +57,88 @@ export interface PcmSource {
   getChannelData(channel: number): Float32Array;
 }
 
+export type WavBitDepth = 8 | 16 | 24 | 32;
+
+export interface WavEncodeOptions {
+  bitDepth: WavBitDepth;
+  /** IEEE-float samples. Only valid with bitDepth 32. */
+  float: boolean;
+  /** Pre-multiplies every sample (pulls an over-unity mix below full scale). */
+  scale?: number;
+}
+
 /**
- * Encode interleaved 16-bit PCM WAV. `scale` pre-multiplies every sample
- * (used to pull an over-unity mix below full scale); anything still outside
- * [-1, 1] hard-clips.
+ * Encode an interleaved WAV. Integer depths hard-clip anything outside
+ * [-1, 1] after scaling; 8-bit is unsigned (silence = 128) per the WAV spec.
+ * Float output keeps full headroom (no clipping) and carries the
+ * spec-required extended fmt chunk (cbSize = 0) plus a fact chunk.
  */
-export function encodeWavPcm16(pcm: PcmSource, scale = 1): ArrayBuffer {
+export function encodeWav(pcm: PcmSource, { bitDepth, float, scale = 1 }: WavEncodeOptions): ArrayBuffer {
+  if (float && bitDepth !== 32) throw new Error('Float samples require 32-bit depth.');
   const channels = pcm.numberOfChannels;
   const frames = pcm.length;
-  const bytesPerFrame = channels * 2;
+  const bytesPerSample = bitDepth / 8;
+  const bytesPerFrame = channels * bytesPerSample;
   const dataSize = frames * bytesPerFrame;
-  const out = new ArrayBuffer(44 + dataSize);
+  const fmtSize = float ? 18 : 16;
+  const factSize = float ? 12 : 0;
+  const headerSize = 20 + fmtSize + factSize + 8;
+  const out = new ArrayBuffer(headerSize + dataSize);
   const view = new DataView(out);
   const ascii = (offset: number, text: string) => {
     for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
   };
   ascii(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
+  view.setUint32(4, headerSize + dataSize - 8, true);
   ascii(8, 'WAVE');
   ascii(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
+  view.setUint32(16, fmtSize, true);
+  view.setUint16(20, float ? 3 : 1, true); // 1 = PCM, 3 = IEEE_FLOAT
   view.setUint16(22, channels, true);
   view.setUint32(24, pcm.sampleRate, true);
   view.setUint32(28, pcm.sampleRate * bytesPerFrame, true);
   view.setUint16(32, bytesPerFrame, true);
-  view.setUint16(34, 16, true);
-  ascii(36, 'data');
-  view.setUint32(40, dataSize, true);
+  view.setUint16(34, bitDepth, true);
+  let offset = 20 + fmtSize;
+  if (float) {
+    view.setUint16(36, 0, true); // cbSize
+    ascii(offset, 'fact');
+    view.setUint32(offset + 4, 4, true);
+    view.setUint32(offset + 8, frames, true);
+    offset += factSize;
+  }
+  ascii(offset, 'data');
+  view.setUint32(offset + 4, dataSize, true);
+  offset += 8;
 
   const channelData = Array.from({ length: channels }, (_, c) => pcm.getChannelData(c));
-  let offset = 44;
   for (let frame = 0; frame < frames; frame++) {
     for (let c = 0; c < channels; c++) {
-      const sample = Math.max(-1, Math.min(1, channelData[c]![frame]! * scale));
-      view.setInt16(offset, Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7fff), true);
-      offset += 2;
+      const raw = channelData[c]![frame]! * scale;
+      if (float) {
+        view.setFloat32(offset, raw, true);
+      } else {
+        const s = Math.max(-1, Math.min(1, raw));
+        switch (bitDepth) {
+          case 8:
+            view.setUint8(offset, Math.round(s < 0 ? s * 128 : s * 127) + 128);
+            break;
+          case 16:
+            view.setInt16(offset, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true);
+            break;
+          case 24: {
+            const v = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff) & 0xffffff;
+            view.setUint8(offset, v & 0xff);
+            view.setUint8(offset + 1, (v >> 8) & 0xff);
+            view.setUint8(offset + 2, (v >> 16) & 0xff);
+            break;
+          }
+          case 32:
+            view.setInt32(offset, Math.round(s < 0 ? s * 0x80000000 : s * 0x7fffffff), true);
+            break;
+        }
+      }
+      offset += bytesPerSample;
     }
   }
   return out;
@@ -100,6 +146,9 @@ export function encodeWavPcm16(pcm: PcmSource, scale = 1): ArrayBuffer {
 
 export interface RenderWavOptions {
   sampleRate: number;
+  bitDepth: WavBitDepth;
+  /** IEEE-float samples. Only valid with bitDepth 32. */
+  float: boolean;
   /** Returns the raw ogg for an instrument, or undefined if unavailable. */
   loadSample: (instrument: Instrument) => Promise<ArrayBuffer | undefined>;
 }
@@ -170,7 +219,11 @@ export async function renderSongToWav(
   }
   const overUnity = peak > 1;
   return {
-    wav: encodeWavPcm16(rendered, overUnity ? 1 / peak : 1),
+    wav: encodeWav(rendered, {
+      bitDepth: options.bitDepth,
+      float: options.float,
+      scale: overUnity ? 1 / peak : 1,
+    }),
     durationSec,
     normalizedDb: overUnity ? 20 * Math.log10(peak) : 0,
     warnings,

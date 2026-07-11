@@ -15,6 +15,7 @@ import type { DragEvent } from 'react';
 import { zipSync } from 'fflate';
 import { fetchVanillaSound } from '../../core/assets/vanillaSounds';
 import { renderSongToWav } from '../../core/audio/renderWav';
+import type { WavBitDepth } from '../../core/audio/renderWav';
 import type { Layer, Song } from '../../core/model/types';
 import { writeNbs } from '../../core/nbs/writer';
 import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
@@ -42,6 +43,7 @@ import type { LitematicUiOptions } from './LitematicSettings';
 
 type ExportFormat = 'nbs' | 'litematic' | 'wav';
 type WavSampleRate = 44100 | 48000;
+type WavSampleType = 'int' | 'float';
 
 const WAV_FILTER = {
   description: 'WAV audio',
@@ -90,7 +92,11 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const [summary, setSummary] = useState<string[] | null>(null);
   const [litOptions, setLitOptions] = useState<LitematicUiOptions>(DEFAULT_LITEMATIC_OPTIONS);
   const [wavSampleRate, setWavSampleRate] = useState<WavSampleRate>(48000);
+  const [wavBitDepth, setWavBitDepth] = useState<WavBitDepth>(16);
+  const [wavSampleType, setWavSampleType] = useState<WavSampleType>('int');
   const [busy, setBusy] = useState(false);
+  // Float only exists at 32-bit; below that the type is forced to int.
+  const wavFloat = wavBitDepth === 32 && wavSampleType === 'float';
   const [allocation, setAllocation] = useState<AllocationState>(loadAllocation);
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
@@ -173,6 +179,8 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const exportWav = async (current: Song, layers: Layer[]): Promise<boolean> => {
     const result = await renderSongToWav(current, layers, {
       sampleRate: wavSampleRate,
+      bitDepth: wavBitDepth,
+      float: wavFloat,
       loadSample: (inst) => {
         if (inst.isVanilla && inst.vanillaId) return fetchVanillaSound(inst.vanillaId);
         if (inst.soundSourceId) return getSound(inst.soundSourceId);
@@ -185,7 +193,8 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
     const minutes = Math.floor(result.durationSec / 60);
     const seconds = (result.durationSec % 60).toFixed(1).padStart(4, '0');
     setSummary([
-      `Rendered ${minutes}:${seconds} at ${wavSampleRate / 1000} kHz, 16-bit stereo.`,
+      `Rendered ${minutes}:${seconds} at ${wavSampleRate / 1000} kHz, ` +
+        `${wavBitDepth}-bit ${wavFloat ? 'float' : 'int'} stereo.`,
       ...(result.normalizedDb > 0
         ? [
             `Mix peaked ${result.normalizedDb.toFixed(1)} dB above full scale; ` +
@@ -427,8 +436,37 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
                     <option value={44100}>44.1 kHz</option>
                   </select>
                 </label>
+                <label
+                  className="lit-row"
+                  title="16-bit is the standard for sharing. 24/32-bit add headroom for further editing in a DAW; 8-bit is lo-fi."
+                >
+                  <span>Bit depth</span>
+                  <select
+                    value={wavBitDepth}
+                    onChange={(e) => setWavBitDepth(Number(e.target.value) as WavBitDepth)}
+                  >
+                    <option value={8}>8 bit</option>
+                    <option value={16}>16 bit</option>
+                    <option value={24}>24 bit</option>
+                    <option value={32}>32 bit</option>
+                  </select>
+                </label>
+                <label
+                  className="lit-row"
+                  title="Sample type. Float (WAVE_FORMAT_IEEE_FLOAT) is only available at 32-bit; lower depths are always integer PCM."
+                >
+                  <span>Sample type</span>
+                  <select
+                    value={wavBitDepth === 32 ? wavSampleType : 'int'}
+                    disabled={wavBitDepth !== 32}
+                    onChange={(e) => setWavSampleType(e.target.value as WavSampleType)}
+                  >
+                    <option value="int">int (PCM)</option>
+                    <option value="float">float (IEEE)</option>
+                  </select>
+                </label>
                 <p>
-                  Renders the selected tracks offline with the exact playback mix (16-bit stereo).
+                  Renders the selected tracks offline with the exact playback mix (stereo).
                   Checked tracks are always audible — mute/solo flags are ignored. Loop settings
                   are ignored; the song plays once. If the mix peaks above full scale it is
                   attenuated to prevent clipping.

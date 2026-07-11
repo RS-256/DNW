@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultSong, createNote, createTrackGroup } from '../model/song';
 import type { PcmSource } from './renderWav';
-import { encodeWavPcm16, flattenForRender } from './renderWav';
+import { encodeWav, flattenForRender } from './renderWav';
 
 function stubPcm(channels: Float32Array[], sampleRate = 48000): PcmSource {
   return {
@@ -12,10 +12,13 @@ function stubPcm(channels: Float32Array[], sampleRate = 48000): PcmSource {
   };
 }
 
-describe('encodeWavPcm16', () => {
+describe('encodeWav', () => {
+  const int16 = { bitDepth: 16, float: false } as const;
+
   it('writes a valid RIFF header for 16-bit stereo', () => {
-    const wav = encodeWavPcm16(
+    const wav = encodeWav(
       stubPcm([new Float32Array([0, 0.5]), new Float32Array([1, -1])], 44100),
+      int16,
     );
     const view = new DataView(wav);
     const ascii = (offset: number, length: number) =>
@@ -37,8 +40,9 @@ describe('encodeWavPcm16', () => {
   });
 
   it('interleaves channels and maps [-1, 1] to int16 with clipping', () => {
-    const wav = encodeWavPcm16(
+    const wav = encodeWav(
       stubPcm([new Float32Array([0, 1, 2]), new Float32Array([0.5, -1, -3])]),
+      int16,
     );
     const view = new DataView(wav);
     // Frame-major: L0 R0 L1 R1 L2 R2.
@@ -51,8 +55,66 @@ describe('encodeWavPcm16', () => {
   });
 
   it('applies the normalization scale before conversion', () => {
-    const wav = encodeWavPcm16(stubPcm([new Float32Array([2])]), 0.5);
+    const wav = encodeWav(stubPcm([new Float32Array([2])]), { ...int16, scale: 0.5 });
     expect(new DataView(wav).getInt16(44, true)).toBe(32767);
+  });
+
+  it('encodes 8-bit as unsigned with 128 as silence', () => {
+    const wav = encodeWav(stubPcm([new Float32Array([0, 1, -1])]), { bitDepth: 8, float: false });
+    const view = new DataView(wav);
+    expect(view.getUint16(32, true)).toBe(1); // block align (1ch * 1 byte)
+    expect(view.getUint16(34, true)).toBe(8);
+    expect(view.getUint8(44)).toBe(128);
+    expect(view.getUint8(45)).toBe(255);
+    expect(view.getUint8(46)).toBe(0);
+  });
+
+  it('encodes 24-bit as little-endian 3-byte two’s complement', () => {
+    const wav = encodeWav(stubPcm([new Float32Array([1, -1, -0.5])]), {
+      bitDepth: 24,
+      float: false,
+    });
+    const bytes = new Uint8Array(wav, 44);
+    expect([...bytes.slice(0, 3)]).toEqual([0xff, 0xff, 0x7f]); // 0x7fffff
+    expect([...bytes.slice(3, 6)]).toEqual([0x00, 0x00, 0x80]); // -0x800000
+    expect([...bytes.slice(6, 9)]).toEqual([0x00, 0x00, 0xc0]); // -0x400000
+  });
+
+  it('encodes 32-bit int at full scale', () => {
+    const wav = encodeWav(stubPcm([new Float32Array([1, -1])]), { bitDepth: 32, float: false });
+    const view = new DataView(wav);
+    expect(view.getUint16(20, true)).toBe(1); // still integer PCM
+    expect(view.getInt32(44, true)).toBe(0x7fffffff);
+    expect(view.getInt32(48, true)).toBe(-0x80000000);
+  });
+
+  it('encodes 32-bit float with extended fmt, fact chunk and no clipping', () => {
+    const wav = encodeWav(stubPcm([new Float32Array([0.5, 2, -1])], 48000), {
+      bitDepth: 32,
+      float: true,
+    });
+    const view = new DataView(wav);
+    const ascii = (offset: number, length: number) =>
+      String.fromCharCode(...new Uint8Array(wav, offset, length));
+
+    expect(view.getUint32(16, true)).toBe(18); // extended fmt size
+    expect(view.getUint16(20, true)).toBe(3); // IEEE_FLOAT
+    expect(view.getUint16(34, true)).toBe(32);
+    expect(view.getUint16(36, true)).toBe(0); // cbSize
+    expect(ascii(38, 4)).toBe('fact');
+    expect(view.getUint32(46, true)).toBe(3); // frame count
+    expect(ascii(50, 4)).toBe('data');
+    expect(view.getUint32(54, true)).toBe(12);
+    expect(wav.byteLength).toBe(58 + 12);
+    expect(view.getFloat32(58, true)).toBeCloseTo(0.5);
+    expect(view.getFloat32(62, true)).toBeCloseTo(2); // over-unity survives
+    expect(view.getFloat32(66, true)).toBeCloseTo(-1);
+  });
+
+  it('rejects float at depths below 32-bit', () => {
+    expect(() =>
+      encodeWav(stubPcm([new Float32Array([0])]), { bitDepth: 16, float: true }),
+    ).toThrow();
   });
 });
 
