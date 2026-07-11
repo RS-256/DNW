@@ -175,6 +175,20 @@ describe('placement', () => {
     expect(track.placed[0]!.dz).toBeLessThan(0);
   });
 
+  it('keeps every note strictly inside the audible range', () => {
+    const song = createDefaultSong();
+    addNote(song, 0, 0, 45, 0); // silent -> would land at exactly 48 uncapped
+    addNote(song, 0, 1, 45, 1);
+    addNote(song, 0, 2, 45, 5);
+    const track = placeTrack(song, song.layers[0]!, 0, DEFAULT_PLACEMENT, resolveNone);
+    for (const p of track.placed) {
+      expect(Math.hypot(track.depth, p.dz)).toBeLessThanOrEqual(47);
+    }
+    // depth 2: floor(sqrt(47² - 4)) = 46
+    expect(Math.abs(track.placed[0]!.dz)).toBe(46);
+    expect(track.placed[0]!.dbError).toBe(0); // error measured against the clamped target
+  });
+
   it('throws when a slot has no base block', () => {
     const song = createDefaultSong();
     addNote(song, 0, 0, 58); // needs harp +24

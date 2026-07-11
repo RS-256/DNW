@@ -17,6 +17,13 @@ import type { VanillaInstrumentId } from '../model/types';
 import { decomposeKey, effectiveSoundId, isVanillaPlayable, slotKey } from './slots';
 
 export const NOTE_RANGE = 48;
+/**
+ * Hard cap on the listener→block distance. At exactly 48 blocks a note is
+ * silent (and lattice rounding could even push it past the range), so every
+ * note is kept strictly inside; the 1-block margin also absorbs the
+ * listener's ear-height offset that the block-grid distance model ignores.
+ */
+export const MAX_PLACEMENT_DISTANCE = 47;
 /** Give up nudging a conflicting note beyond this lateral distance. */
 const MAX_NUDGE = 96;
 
@@ -160,6 +167,10 @@ export function placeTrack(
   const { sign, depth } = trackDepth(index, options);
   const noteY = sign * depth;
   const gLayer = gain(depth);
+  const maxMagnitude =
+    depth >= MAX_PLACEMENT_DISTANCE
+      ? 0
+      : Math.floor(Math.sqrt(MAX_PLACEMENT_DISTANCE ** 2 - depth * depth));
   const occupied = new Map<number, Set<number>>();
   const placed: PlacedNote[] = [];
   let balance = 0; // (#right - #left) among pan-free notes, for the balancer
@@ -180,10 +191,15 @@ export function placeTrack(
       );
     }
 
-    // Target gain and ideal lateral magnitude (spec §4).
-    const targetGain = gLayer * Math.pow(vEff, options.alpha);
-    const d = NOTE_RANGE * (1 - targetGain);
-    const magnitude = Math.round(Math.sqrt(Math.max(0, d * d - depth * depth)));
+    // Target gain and ideal lateral magnitude (spec §4). The distance is
+    // clamped inside the audible range (and to the track's reachable lateral
+    // extent); the error target follows the clamp, since anything quieter is
+    // simply not representable on this track.
+    const idealGain = gLayer * Math.pow(vEff, options.alpha);
+    const d = Math.min(NOTE_RANGE * (1 - idealGain), MAX_PLACEMENT_DISTANCE);
+    const idealMagnitude = Math.min(Math.sqrt(Math.max(0, d * d - depth * depth)), maxMagnitude);
+    const targetGain = gain(Math.hypot(depth, idealMagnitude));
+    const magnitude = Math.round(idealMagnitude);
 
     const panFree = Math.abs(effPan) < 1e-9;
     const wantedSign = panFree ? (balance <= 0 ? 1 : -1) : effPan > 0 ? 1 : -1;
@@ -201,7 +217,7 @@ export function placeTrack(
           dbError(targetGain, gain(Math.hypot(depth, b))),
       );
       for (const m of magnitudes) {
-        if (m < 0) continue;
+        if (m < 0 || m > maxMagnitude) continue;
         for (const s of panFree ? [wantedSign, -wantedSign] : [wantedSign]) {
           const candidate = s * m;
           if (!cells.has(candidate)) {
@@ -251,6 +267,12 @@ export function placeSong(
     const layer = byId.get(id);
     if (!layer) return;
     const track = placeTrack(song, layer, index, options, resolveBlock);
+    if (track.depth >= MAX_PLACEMENT_DISTANCE && track.placed.length > 0) {
+      warnings.push(
+        `Track '${track.name}' sits at depth ${track.depth}, at/beyond the audible range — ` +
+          'its notes are pinned to the runner line and will be near-silent.',
+      );
+    }
     for (const p of track.placed) {
       if (p.dbError > 1) overThreshold++;
       if (Number.isFinite(p.dbError)) maxDbError = Math.max(maxDbError, p.dbError);
