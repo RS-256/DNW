@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
+import { zipSync } from 'fflate';
 import type { Layer, Song } from '../../core/model/types';
 import { writeNbs } from '../../core/nbs/writer';
 import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
@@ -198,21 +199,17 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         (result.maxDbError > 0 ? ` (max placement error ${result.maxDbError.toFixed(2)} dB)` : ''),
       ...result.warnings,
     ];
-
-    const saved = await webAdapter.saveFile(
-      `${base}.litematic`,
-      result.file.slice().buffer,
-      LITEMATIC_FILTER,
-    );
-    if (!saved) return false;
+    const encoder = new TextEncoder();
+    // Everything ships in one zip; the .litematic and the nested resource
+    // pack are already compressed, so they are stored without recompression.
+    const bundle: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {
+      [`${base}.litematic`]: [result.file, { level: 0 }],
+    };
 
     if (resolved.length > 0) {
       const { json, conflicts } = buildInfinoteConfig(nextAllocation, resolved);
       lines.push(...conflicts.map((c) => `Config conflict: ${c}`));
-      await webAdapter.saveFile('infinote.json', json, {
-        ...PROJECT_FILTER,
-        description: 'infinote config',
-      });
+      bundle['infinote.json'] = encoder.encode(json);
     }
 
     const managed = collectManagedInstruments(current, included);
@@ -234,7 +231,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
           sounds.map((s) => ({ soundId: s.soundId, data: s.data })),
           `DNW sounds for ${base}`,
         );
-        await webAdapter.saveFile(`${base}_resources.zip`, zip.slice().buffer, ZIP_FILTER);
+        bundle[`${base}_resources.zip`] = [zip, { level: 0 }];
       }
     }
 
@@ -255,12 +252,27 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         vanillaRows: collectVanillaUsage(current, included),
         warnings: lines.filter((l) => !l.startsWith('Placed ')),
       });
-      await webAdapter.saveFile(`${base}_manifest.md`, manifest, {
-        description: 'Export manifest',
-        extensions: ['.md'],
-        mime: 'text/markdown',
-      });
+      bundle[`${base}_manifest.md`] = encoder.encode(manifest);
     }
+
+    // A lone .litematic saves directly; anything more becomes one zip.
+    const names = Object.keys(bundle);
+    let saved: boolean;
+    if (names.length === 1) {
+      saved = await webAdapter.saveFile(
+        `${base}.litematic`,
+        result.file.slice().buffer,
+        LITEMATIC_FILTER,
+      );
+    } else {
+      lines.push(`Bundled: ${names.join(', ')}`);
+      saved = await webAdapter.saveFile(
+        `${base}.zip`,
+        zipSync(bundle).slice().buffer,
+        ZIP_FILTER,
+      );
+    }
+    if (!saved) return false;
 
     setSummary(lines);
     return true;
