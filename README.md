@@ -73,6 +73,19 @@ Design details live in
 [docs/litematic-export-spec.md](docs/litematic-export-spec.md); background
 and future work in [docs/infinote-export.md](docs/infinote-export.md).
 
+### WAV export
+
+Renders the song to an audio file offline (`OfflineAudioContext`) with the
+exact same node graph as in-app playback, so what you hear is what you get.
+
+- Sample rate 44.1 / 48 kHz; bit depth 8 / 16 / 24 bit (integer PCM) or
+  32 bit (integer or IEEE float)
+- Checked tracks are always audible — mute/solo flags are ignored, volumes
+  and pans still apply; loop settings are ignored (the song plays once)
+- A mix peaking above full scale is attenuated as a whole instead of
+  clipping (and the summary reports by how much); float output keeps its
+  headroom unclipped
+
 ## Controls
 
 | Input | Action |
@@ -116,7 +129,7 @@ dev or on static hosting. Override the hosts with `VITE_MC_SOUND_BASE` /
 
 - Live connection to a server (WebSocket / RCON) for auditioning without
   exporting
-- MIDI import, datapack export
+- MIDI import / export, datapack export
 - Automatic stereo→mono downmix for custom samples
 - Desktop packaging via Tauri
 
