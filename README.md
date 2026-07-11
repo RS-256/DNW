@@ -1,58 +1,79 @@
 # DNW — Note Block DAW
 
-A digital audio workstation for Minecraft note blocks, heavily inspired by
-[Open Note Block Studio](https://github.com/OpenNBS/NoteBlockStudio).
+A browser-based digital audio workstation for Minecraft note blocks, inspired
+by [Open Note Block Studio](https://github.com/OpenNBS/NoteBlockStudio) —
+with one goal the others don't have: exporting a song as a **playable in-game
+structure** for [infinote](https://github.com/RS-256/infinote), a server-side
+Fabric mod that extends note blocks with custom sounds, pitch shift and
+volume control.
 
-The end goal of this project is in-game music through
-[infinote](https://github.com/RS-256/infinote), a server-side Fabric mod that
-extends note blocks with custom sounds, pitch shift and volume control.
+**▶ Live app: <https://rs-256.github.io/DNW/>** — runs entirely in the
+browser, no install, no backend.
 
 ## Concepts
 
-- **Tick**: the atomic time unit of a song. One tick = one Minecraft game tick
-  (gt), so exporting to the game never drifts. Note blocks cannot sustain a
-  sound, so every note is exactly one tick wide.
+- **Tick**: the atomic time unit of a song. One tick = one Minecraft game
+  tick (gt), so exporting to the game never drifts. Note blocks cannot
+  sustain a sound, so every note is exactly one tick wide.
 - **tps** (ticks per second): playback speed, derived as
   `tps = bpm / 60 * tickPerQuarter`, where `tickPerQuarter` is the number of
   game ticks per quarter note — the same setting infinote uses for its bpm.
 - **Tempo track**: a non-deletable track that defines every bpm and
   time-signature change in the song.
 
-## Features (v1 scope)
+## Features
 
-- Piano roll with fixed one-tick-wide notes, per-note velocity / pan / fine pitch
-- Unlimited tracks with per-track color, volume, pan, mute, solo
+### Editing & playback
+
+- Piano roll with fixed one-tick-wide notes, per-note velocity / pan / fine
+  pitch
+- Unlimited tracks with per-track color, volume, pan, mute, solo, and track
+  grouping
 - Onion skin: inactive tracks are overlaid as translucent outlines in their
   track color, opacity scaled by note velocity
-- Custom instruments: import .ogg samples, set base pitch / volume, and attach
-  infinote sound ids (`namespace:path`)
+- Custom instruments: import `.ogg` samples, set base pitch / volume, and
+  attach infinote sound ids (`namespace:path`)
+- Skins: optional textured note rendering (note block texture fill,
+  base-block border), toggleable as disabled / activated (active track only)
+  / enabled
+
+### Files
+
+- Native projects (`.dnw.json`) with open / save
 - NBS file support: reads v0–v5, writes v5
-- Skins: optional textured note rendering (note block texture fill, base-block
-  border), toggleable as disabled / activated (active track only) / enabled
+- Autosave to IndexedDB — the last song is restored on launch
+- Unified export modal: pick a format, reorder tracks by drag, include /
+  exclude tracks per export
 
-## Roadmap
+### Litematic export (infinote)
 
-- **infinote-compatible litematic export** — render a song as a note block
-  contraption schematic (.litematic) that plays as-is on an infinote server
-  (design notes: [docs/infinote-export.md](docs/infinote-export.md))
-- infinote resource pack generation (`sounds.json` + .ogg) and
-  `/infinote add` command sequences
-- Live connection to a server (WebSocket / RCON)
-- MIDI import, datapack export
-- Desktop packaging via Tauri
+Renders a song as a *runner structure* schematic (`.litematic`): note blocks
+laid out along a line, played back positionally while the listener is
+teleported through it one block per game tick. Volume and pan are realized
+**spatially** — velocity maps to each note block's distance from the
+listener, computed in dB space.
 
-## Status
+- One track = one litematica region at its own depth; track depth is the
+  author's fader, re-tunable in-game
+- Tempo region: a command-block row that drives the listener (`tp` per tick,
+  `/bpm set` at tempo changes), placed outside audible range
+- Palette region: an auto-generated audition rack with wall-sign labels, one
+  column per sound
+- infinote config generation: a persistent allocation table maps
+  `(sound, pitch shift)` to base blocks, seedable from your world's existing
+  `infinote.json`; the export writes the full merged config
+- Resource pack emission for custom `.ogg` samples (with a mono check —
+  stereo sounds would play non-positionally)
+- A markdown manifest: block / sound / pitch tables, track depths and a
+  dB-error report as an in-game tuning reference
+- Everything ships as a single zip (or a lone `.litematic` when nothing else
+  is needed)
 
-All v1 features above are implemented. See the Roadmap for what comes next.
+Design details live in
+[docs/litematic-export-spec.md](docs/litematic-export-spec.md); background
+and future work in [docs/infinote-export.md](docs/infinote-export.md).
 
-- Open / save native projects (`.dnw.json`), import / export `.nbs`
-- Autosave to IndexedDB (the last song is restored on launch)
-- Custom instruments: drop `.ogg` files into the Instruments dialog
-- Skins: set the `skin` dropdown to `activated` or `enabled`, then click
-  "Get textures" (downloads block textures from Mojang's CDN once and caches
-  them locally; you can also drop a Minecraft client `.jar` onto the button)
-
-### Controls
+## Controls
 
 | Input | Action |
 | --- | --- |
@@ -73,6 +94,32 @@ All v1 features above are implemented. See the Roadmap for what comes next.
 | Delete | Delete selection |
 | Click on tempo lane | Add / edit bpm & time-signature events |
 
+## Getting sounds and textures
+
+Minecraft assets are **not** bundled; they are fetched on first use and
+cached locally in IndexedDB:
+
+- **Sounds** — vanilla note block samples load automatically from the
+  community mirror
+  [`InventivetalentDev/minecraft-assets`](https://github.com/InventivetalentDev/minecraft-assets)
+  via jsDelivr (Mojang's own object store sends no CORS header).
+- **Textures** (for skins) — set the `skin` dropdown to `activated` or
+  `enabled`, then click **Get textures** to download the client jar from
+  `piston-data.mojang.com`, or drop a Minecraft client `.jar` onto the
+  button.
+
+Both hosts send `Access-Control-Allow-Origin: *`, so no proxy is needed in
+dev or on static hosting. Override the hosts with `VITE_MC_SOUND_BASE` /
+`VITE_MC_DATA_BASE`.
+
+## Roadmap
+
+- Live connection to a server (WebSocket / RCON) for auditioning without
+  exporting
+- MIDI import, datapack export
+- Automatic stereo→mono downmix for custom samples
+- Desktop packaging via Tauri
+
 ## Development
 
 ```sh
@@ -87,36 +134,17 @@ npm run lint    # lint
 Dependencies flow one way: `ui → state → core`.
 
 - `src/core` — UI-agnostic domain logic (data model, NBS I/O, audio engine,
-  platform adapters). Must not import React or the upper layers; enforced by
-  ESLint.
+  litematic / NBT writer, infinote placement & config, platform adapters).
+  Must not import React or the upper layers; enforced by ESLint.
 - `src/state` — zustand stores, undo/redo history (immer patches).
-- `src/ui` — React components, canvas piano roll.
-
-Minecraft assets (sounds, textures) are **not** bundled; they are fetched from
-Mojang's official CDN on first use and cached locally in IndexedDB.
-
-### Asset sources (CORS)
-
-Both asset types are fetched from hosts that send `Access-Control-Allow-Origin:
-*`, so **no proxy is needed** in dev or on static hosting:
-
-- **Sounds** — the vanilla note block `.ogg` samples come from the community
-  mirror [`InventivetalentDev/minecraft-assets`](https://github.com/InventivetalentDev/minecraft-assets)
-  served over jsDelivr. (Mojang's own object store,
-  `resources.download.minecraft.net`, sends no CORS header, which is why the
-  mirror is used.) Override the base with `VITE_MC_SOUND_BASE`.
-- **Textures** — the client jar is downloaded directly from
-  `piston-data.mojang.com`, which does send CORS headers. Override the host
-  with `VITE_MC_DATA_BASE`. As a fallback, block textures can also be imported
-  by dropping a Minecraft client `.jar` onto the "Get textures" button.
+- `src/ui` — React components, canvas piano roll, export modal.
 
 ## Deployment (GitHub Pages)
 
 Pushing to `main` builds and deploys the app via
-[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). One-time setup:
-enable Pages under *Settings → Pages → Build and deployment → Source → GitHub
-Actions*. That's it — sounds and textures work out of the box.
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). One-time
+setup: enable Pages under *Settings → Pages → Build and deployment → Source →
+GitHub Actions*. That's it — sounds and textures work out of the box.
 
 The production `base` path is `/DNW/` (set in `vite.config.ts`); if you fork
-under a different repo name, update it to `/<repo>/`. A future Tauri build needs
-no CORS handling at all.
+under a different repo name, update it to `/<repo>/`.
