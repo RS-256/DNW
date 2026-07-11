@@ -967,3 +967,45 @@ body {
 .lit-slot-row input.missing {
   border-color: var(--error);
 }
+
+/* --- MIDI import dialog --- */
+
+.midi-dialog {
+  width: min(480px, 90vw);
+}
+
+.midi-info {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}
+
+.midi-gt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.midi-gt-row input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  width: 80px;
+}
+
+.midi-warning {
+  color: var(--error);
+  font-size: 12px;
+  margin: 0;
+}
+
+.midi-note {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}

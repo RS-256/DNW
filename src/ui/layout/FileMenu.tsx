@@ -1,15 +1,20 @@
 /**
- * File operations: new / open (.dnw.json or .nbs) / save / export (via the
- * shared export modal), plus the song title field.
+ * File operations: new / open (.dnw.json, .nbs or .mid) / save / export (via
+ * the shared export modal), plus the song title field. Opening a MIDI file
+ * goes through MidiImportModal to pick tickPerQuarter first.
  */
 import { useState } from 'react';
+import { midiToSong } from '../../core/midi/convert';
+import type { MidiFile } from '../../core/midi/reader';
+import { readMidi } from '../../core/midi/reader';
 import { createDefaultSong } from '../../core/model/song';
 import { readNbs } from '../../core/nbs/reader';
-import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
+import { MIDI_FILTER, NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
 import { webAdapter } from '../../core/platform/webAdapter';
 import { deserializeProject, serializeProject } from '../../core/project/serialize';
 import ConfirmDialog from '../common/ConfirmDialog';
 import ExportModal from '../export/ExportModal';
+import MidiImportModal from '../import/MidiImportModal';
 import { useEditorStore } from '../../state/editorStore';
 import { useSongStore } from '../../state/songStore';
 
@@ -22,6 +27,7 @@ export default function FileMenu() {
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'new' | 'open' | null>(null);
   const [showExport, setShowExport] = useState(false);
+  const [midiImport, setMidiImport] = useState<{ fileName: string; midi: MidiFile } | null>(null);
   const name = useSongStore((s) => s.song.meta.name);
   const mutate = useSongStore((s) => s.mutate);
 
@@ -33,10 +39,14 @@ export default function FileMenu() {
   const doNew = () => loadSong(createDefaultSong());
 
   const doOpen = wrap(async () => {
-    const file = await webAdapter.openFile([PROJECT_FILTER, NBS_FILTER]);
+    const file = await webAdapter.openFile([PROJECT_FILTER, NBS_FILTER, MIDI_FILTER]);
     if (!file) return;
-    if (file.name.toLowerCase().endsWith('.nbs')) {
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.nbs')) {
       loadSong(readNbs(file.data));
+    } else if (lower.endsWith('.mid') || lower.endsWith('.midi')) {
+      // MIDI needs a tickPerQuarter choice; the modal finishes the import.
+      setMidiImport({ fileName: file.name, midi: readMidi(file.data) });
     } else {
       loadSong(deserializeProject(new TextDecoder().decode(file.data)));
     }
@@ -77,6 +87,18 @@ export default function FileMenu() {
       />
       {error && <span className="file-menu-error">{error}</span>}
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {midiImport && (
+        <MidiImportModal
+          fileName={midiImport.fileName}
+          midi={midiImport.midi}
+          onCancel={() => setMidiImport(null)}
+          onImport={(tickPerQuarter) => {
+            const base = midiImport.fileName.replace(/\.(mid|midi)$/i, '');
+            loadSong(midiToSong(midiImport.midi, tickPerQuarter, base));
+            setMidiImport(null);
+          }}
+        />
+      )}
       {pendingAction && (
         <ConfirmDialog
           title={pendingAction === 'new' ? 'New song' : 'Open song'}

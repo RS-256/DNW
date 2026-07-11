@@ -15,3 +15,9 @@ export const NBS_FILTER: FileTypeFilter = {
   extensions: ['.nbs'],
   mime: 'application/octet-stream',
 };
+
+export const MIDI_FILTER: FileTypeFilter = {
+  description: 'Standard MIDI file',
+  extensions: ['.mid', '.midi'],
+  mime: 'audio/midi',
+};
