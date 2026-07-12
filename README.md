@@ -78,10 +78,6 @@ listener, computed in dB space.
 - Everything ships as a single zip (or a lone `.litematic` when nothing else
   is needed)
 
-Design details live in
-[docs/litematic-export-spec.md](docs/litematic-export-spec.md); background
-and future work in [docs/infinote-export.md](docs/infinote-export.md).
-
 ### WAV export
 
 Renders the song to an audio file offline (`OfflineAudioContext`) with the
@@ -94,6 +90,23 @@ exact same node graph as in-app playback, so what you hear is what you get.
 - A mix peaking above full scale is attenuated as a whole instead of
   clipping (and the summary reports by how much); float output keeps its
   headroom unclipped
+
+### MIDI export
+
+Writes an SMF format-1 file (`.mid`): track 0 carries the tempo map (bpm and
+time-signature changes), then one MIDI track per checked track. Game ticks
+scale to a ~480 PPQ grid losslessly.
+
+- Instruments map to General MIDI: one channel per instrument, vanilla
+  defaults with sounding-octave transpose built in, editable per instrument
+  in the Instruments dialog (stored in the project file);
+  basedrum / snare / hat become GM drums on channel 10
+- Note length is selectable — sustain until the next same-key note (capped
+  at a quarter note, default) or a literal single game tick
+- Velocity bakes in note × track × group volume; instrument volume becomes
+  channel volume (CC7), track pan becomes channel pan (CC10)
+- What MIDI cannot store is dropped with a warning: fine pitch (cents) and
+  per-note pan
 
 ## Controls
 

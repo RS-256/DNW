@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createDefaultSong, createNote } from '../model/song';
+import type { Song } from '../model/types';
 import { analyzeMidiTiming, midiToSong } from './convert';
+import { GM_PROGRAM_NAMES, midiVoiceFor } from './gm';
 import type { MidiFile } from './reader';
 import { readMidi } from './reader';
+import { writeMidi } from './writer';
 
 // --- tiny SMF builder for tests ---
 
@@ -165,5 +169,175 @@ describe('midiToSong', () => {
       { type: 'timeSignature', tick: 0, numerator: 4, denominator: 4 },
     ]);
     expect(empty.layers).toHaveLength(1);
+  });
+});
+
+// --- export ---
+
+/**
+ * Raw event scan for the writer tests (readMidi drops note-offs and control
+ * events). The writer never uses running status, so every event is explicit.
+ */
+interface RawEvent {
+  track: number;
+  tick: number;
+  status: number;
+  data: number[];
+}
+
+function scanEvents(buffer: ArrayBuffer): RawEvent[] {
+  const bytes = new Uint8Array(buffer);
+  const events: RawEvent[] = [];
+  let pos = 14; // past MThd
+  let track = 0;
+  while (pos < bytes.length) {
+    const size = (bytes[pos + 4]! << 24) | (bytes[pos + 5]! << 16) | (bytes[pos + 6]! << 8) | bytes[pos + 7]!;
+    const end = pos + 8 + size;
+    pos += 8;
+    let tick = 0;
+    while (pos < end) {
+      let delta = 0;
+      while (bytes[pos]! & 0x80) delta = (delta << 7) | (bytes[pos++]! & 0x7f);
+      delta = (delta << 7) | bytes[pos++]!;
+      tick += delta;
+      const status = bytes[pos++]!;
+      if (status === 0xff) {
+        const metaType = bytes[pos++]!;
+        const len = bytes[pos++]!; // writer meta payloads stay under 128 bytes
+        events.push({ track, tick, status, data: [metaType, ...bytes.subarray(pos, pos + len)] });
+        pos += len;
+      } else {
+        const len = (status & 0xf0) === 0xc0 ? 1 : 2;
+        events.push({ track, tick, status, data: [...bytes.subarray(pos, pos + len)] });
+        pos += len;
+      }
+    }
+    track++;
+  }
+  return events;
+}
+
+function songWithNotes(notes: Parameters<typeof createNote>[0][]): Song {
+  const song = createDefaultSong();
+  song.meta.name = 'test song';
+  song.layers[0]!.notes = notes.map(createNote);
+  return song;
+}
+
+const HARP = 0;
+const BASS = 1;
+const BASEDRUM = 2;
+
+describe('writeMidi', () => {
+  it('roundtrips header, names, tempo map and notes through readMidi', () => {
+    const song = songWithNotes([
+      { tick: 2, instrument: HARP, key: 45, velocity: 100, pan: 0, pitch: 0 },
+    ]);
+    song.tempoTrack.events.push({ type: 'bpm', tick: 8, bpm: 120 });
+    const result = writeMidi(song, song.layers, { noteLength: 'oneTick' });
+    expect(result.ppq).toBe(480); // tickPerQuarter 4 x 120
+    expect(result.warnings).toEqual([]);
+
+    const midi = readMidi(result.data);
+    expect(midi.format).toBe(1);
+    expect(midi.trackCount).toBe(2); // meta + one layer
+    expect(midi.ppq).toBe(480);
+    expect(midi.trackNames[0]).toBe('test song');
+    expect(midi.trackNames[1]).toBe('Track 1');
+    expect(midi.tempos).toEqual([
+      { tick: 0, bpm: 150 },
+      { tick: 960, bpm: 120 },
+    ]);
+    expect(midi.timeSignatures).toEqual([{ tick: 0, numerator: 4, denominator: 4 }]);
+    expect(midi.notes).toEqual([{ tick: 240, key: 66, velocity: 127, channel: 0, track: 1 }]);
+  });
+
+  it('writes program, channel volume and pan at track start', () => {
+    const song = songWithNotes([
+      { tick: 0, instrument: HARP, key: 45, velocity: 50, pan: 0, pitch: 0 },
+    ]);
+    song.instruments[HARP]!.volume = 50;
+    song.layers[0]!.volume = 50;
+    song.layers[0]!.pan = 1;
+    const events = scanEvents(writeMidi(song, song.layers, { noteLength: 'oneTick' }).data);
+    const setup = events.filter((e) => e.track === 1 && e.tick === 0);
+    expect(setup.find((e) => e.status === 0xc0)!.data).toEqual([0]); // piano
+    expect(setup.find((e) => e.status === 0xb0 && e.data[0] === 7)!.data[1]).toBe(64);
+    expect(setup.find((e) => e.status === 0xb0 && e.data[0] === 10)!.data[1]).toBe(127);
+    // Velocity bakes note x layer (not instrument, which went to CC7).
+    expect(setup.find((e) => e.status === 0x90)!.data[1]).toBe(1 + Math.round(0.25 * 126));
+  });
+
+  it('sustains until the next same-key note, capped at one quarter', () => {
+    const song = songWithNotes([
+      { tick: 0, instrument: HARP, key: 45, velocity: 100, pan: 0, pitch: 0 },
+      { tick: 2, instrument: HARP, key: 45, velocity: 100, pan: 0, pitch: 0 },
+      { tick: 2, instrument: HARP, key: 47, velocity: 100, pan: 0, pitch: 0 },
+    ]);
+    const events = scanEvents(writeMidi(song, song.layers, { noteLength: 'sustain' }).data);
+    const offs = events.filter((e) => e.status === 0x80);
+    expect(offs.map((e) => ({ tick: e.tick, key: e.data[0] }))).toEqual([
+      { tick: 240, key: 66 }, // cut by the next key-45 note at tick 2
+      { tick: 240 + 480, key: 66 }, // no successor: one quarter
+      { tick: 240 + 480, key: 68 },
+    ]);
+  });
+
+  it('applies the vanilla transpose table and midiProgram overrides', () => {
+    const song = songWithNotes([
+      { tick: 0, instrument: BASS, key: 45, velocity: 100, pan: 0, pitch: 0 },
+    ]);
+    song.instruments[BASS]!.midiProgram = 35; // fretless bass
+    const events = scanEvents(writeMidi(song, song.layers, { noteLength: 'oneTick' }).data);
+    expect(events.find((e) => e.status === 0xc0)!.data).toEqual([35]);
+    expect(events.find((e) => e.status === 0x90)!.data[0]).toBe(45 + 21 - 24);
+  });
+
+  it('sends percussion to channel 10 with fixed keys and no program change', () => {
+    const song = songWithNotes([
+      { tick: 0, instrument: BASEDRUM, key: 50, velocity: 100, pan: 0, pitch: 0 },
+    ]);
+    song.instruments[BASEDRUM]!.volume = 50;
+    const events = scanEvents(writeMidi(song, song.layers, { noteLength: 'sustain' }).data);
+    const on = events.find((e) => (e.status & 0xf0) === 0x90)!;
+    expect(on.status & 0x0f).toBe(9);
+    expect(on.data[0]).toBe(35); // acoustic bass drum, regardless of key
+    expect(on.data[1]).toBe(1 + Math.round(0.5 * 126)); // volume folded into velocity
+    expect(events.some((e) => (e.status & 0xf0) === 0xc0)).toBe(false);
+  });
+
+  it('warns about dropped cents, per-note pan and channel pan conflicts', () => {
+    const song = songWithNotes([
+      { tick: 0, instrument: HARP, key: 45, velocity: 100, pan: 0.5, pitch: 20 },
+      { tick: 1, instrument: HARP, key: 45, velocity: 100, pan: 0, pitch: -5 },
+    ]);
+    const second = structuredClone(song.layers[0]!);
+    second.id = 'layer2';
+    second.pan = -1;
+    song.layers.push(second);
+    const { warnings } = writeMidi(song, song.layers, { noteLength: 'oneTick' });
+    // Both layers carry the cloned notes: 2 x 2 cents, 2 x 1 note-pan.
+    expect(warnings.some((w) => w.includes('4 note(s) have fine pitch'))).toBe(true);
+    expect(warnings.some((w) => w.includes('per-note pan'))).toBe(true);
+    expect(warnings.some((w) => w.includes('share a MIDI channel'))).toBe(true);
+  });
+});
+
+describe('gm', () => {
+  it('has 128 distinct program names', () => {
+    expect(GM_PROGRAM_NAMES).toHaveLength(128);
+    expect(new Set(GM_PROGRAM_NAMES).size).toBe(128);
+  });
+
+  it('defaults custom instruments to piano with no transpose', () => {
+    const voice = midiVoiceFor({
+      id: 'c',
+      name: 'custom',
+      isVanilla: false,
+      pitchKey: 45,
+      volume: 100,
+      pressKey: false,
+    });
+    expect(voice).toEqual({ program: 0, transpose: 0 });
   });
 });

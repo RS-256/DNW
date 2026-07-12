@@ -1,10 +1,13 @@
 /**
  * Instrument manager: import .ogg samples as custom instruments and edit
- * their properties (base pitch, volume, infinote sound id, base block).
+ * their properties (base pitch, volume, infinote sound id, base block),
+ * plus the per-instrument GM program used by the MIDI export.
  */
 import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
+import { defaultProgram, GM_PROGRAM_NAMES, isDrumInstrument } from '../../core/midi/gm';
 import { DEFAULT_PITCH_KEY, newId } from '../../core/model/song';
+import type { Instrument } from '../../core/model/types';
 import { putSound } from '../../state/persistence';
 import { usePlaybackStore } from '../../state/playbackStore';
 import { addCustomInstrument, removeInstrument, updateInstrument } from '../../state/songActions';
@@ -18,6 +21,25 @@ async function importOggFiles(files: FileList | File[]): Promise<void> {
     await putSound(soundSourceId, await file.arrayBuffer());
     addCustomInstrument(file.name.replace(/\.ogg$/i, ''), soundSourceId);
   }
+}
+
+function GmProgramSelect({ inst, index }: { inst: Instrument; index: number }) {
+  if (isDrumInstrument(inst)) {
+    return <span title="Fixed key on the GM percussion channel">GM drums (ch 10)</span>;
+  }
+  return (
+    <select
+      value={inst.midiProgram ?? defaultProgram(inst)}
+      onChange={(e) => updateInstrument(index, { midiProgram: Number(e.target.value) })}
+      title="General MIDI program used by the MIDI export"
+    >
+      {GM_PROGRAM_NAMES.map((name, program) => (
+        <option key={program} value={program}>
+          {program + 1} {name}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 export default function InstrumentDialog({ onClose }: { onClose: () => void }) {
@@ -161,6 +183,24 @@ export default function InstrumentDialog({ onClose }: { onClose: () => void }) {
             </tbody>
           </table>
         )}
+
+        <details className="inst-midi">
+          <summary title="Only affects the .mid export; stored in the project file">
+            MIDI export — GM programs
+          </summary>
+          <table className="inst-table">
+            <tbody>
+              {instruments.map((inst, index) => (
+                <tr key={inst.id}>
+                  <td className="inst-midi-name">{inst.name}</td>
+                  <td>
+                    <GmProgramSelect inst={inst} index={index} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       </div>
     </div>
   );

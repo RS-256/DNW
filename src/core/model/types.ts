@@ -88,6 +88,8 @@ export interface Instrument {
   volume: number;
   /** infinote sound id, "namespace:path" (used by future in-game export). */
   soundId?: string;
+  /** GM program 0-127 for MIDI export. Defaults come from the vanilla table. */
+  midiProgram?: number;
   /** Block placed under the note block for this instrument (skin border texture source). */
   baseBlock?: string;
   /** NBS custom-instrument compatibility: press the piano key when played. */

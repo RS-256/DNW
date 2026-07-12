@@ -362,7 +362,9 @@ export function addCustomInstrument(name: string, soundSourceId: string): number
 
 export function updateInstrument(
   index: number,
-  props: Partial<Pick<Instrument, 'name' | 'pitchKey' | 'volume' | 'soundId' | 'baseBlock'>>,
+  props: Partial<
+    Pick<Instrument, 'name' | 'pitchKey' | 'volume' | 'soundId' | 'baseBlock' | 'midiProgram'>
+  >,
 ): void {
   useSongStore.getState().mutate((draft) => {
     const inst = draft.instruments[index];

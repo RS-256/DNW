@@ -636,6 +636,31 @@ body {
   width: 56px;
 }
 
+.inst-table select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.inst-midi {
+  margin-top: 12px;
+}
+
+.inst-midi summary {
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inst-midi-name {
+  width: 40%;
+  color: var(--text-dim);
+}
+
 .inst-actions {
   white-space: nowrap;
 }

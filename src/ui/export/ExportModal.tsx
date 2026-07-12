@@ -16,6 +16,8 @@ import { zipSync } from 'fflate';
 import { fetchVanillaSound } from '../../core/assets/vanillaSounds';
 import { renderSongToWav } from '../../core/audio/renderWav';
 import type { WavBitDepth } from '../../core/audio/renderWav';
+import { writeMidi } from '../../core/midi/writer';
+import type { MidiNoteLength } from '../../core/midi/writer';
 import type { Layer, Song } from '../../core/model/types';
 import { writeNbs } from '../../core/nbs/writer';
 import { NBS_FILTER, PROJECT_FILTER } from '../../core/platform/fileFilters';
@@ -41,10 +43,15 @@ import { useSongStore } from '../../state/songStore';
 import LitematicSettings, { DEFAULT_LITEMATIC_OPTIONS } from './LitematicSettings';
 import type { LitematicUiOptions } from './LitematicSettings';
 
-type ExportFormat = 'nbs' | 'litematic' | 'wav';
+type ExportFormat = 'nbs' | 'litematic' | 'wav' | 'midi';
 type WavSampleRate = 44100 | 48000;
 type WavSampleType = 'int' | 'float';
 
+const MIDI_FILTER = {
+  description: 'Standard MIDI File',
+  extensions: ['.mid'],
+  mime: 'audio/midi',
+};
 const WAV_FILTER = {
   description: 'WAV audio',
   extensions: ['.wav'],
@@ -94,6 +101,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const [wavSampleRate, setWavSampleRate] = useState<WavSampleRate>(48000);
   const [wavBitDepth, setWavBitDepth] = useState<WavBitDepth>(16);
   const [wavSampleType, setWavSampleType] = useState<WavSampleType>('int');
+  const [midiNoteLength, setMidiNoteLength] = useState<MidiNoteLength>('sustain');
   const [busy, setBusy] = useState(false);
   // Float only exists at 32-bit; below that the type is forced to int.
   const wavFloat = wavBitDepth === 32 && wavSampleType === 'float';
@@ -174,6 +182,17 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   const exportNbs = async (current: Song, layers: Layer[]): Promise<boolean> => {
     const base = current.meta.name.trim() || 'untitled';
     return webAdapter.saveFile(`${base}.nbs`, writeNbs({ ...current, layers }), NBS_FILTER);
+  };
+
+  const exportMidi = async (current: Song, layers: Layer[]): Promise<boolean> => {
+    const result = writeMidi(current, layers, { noteLength: midiNoteLength });
+    const base = current.meta.name.trim() || 'untitled';
+    if (!(await webAdapter.saveFile(`${base}.mid`, result.data, MIDI_FILTER))) return false;
+    setSummary([
+      `Wrote ${layers.length} track${layers.length === 1 ? '' : 's'} at ${result.ppq} PPQ.`,
+      ...result.warnings,
+    ]);
+    return true;
   };
 
   const exportWav = async (current: Song, layers: Layer[]): Promise<boolean> => {
@@ -340,7 +359,9 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
           ? await exportNbs(current, layers)
           : format === 'wav'
             ? await exportWav(current, layers)
-            : await exportLitematic(current, layers);
+            : format === 'midi'
+              ? await exportMidi(current, layers)
+              : await exportLitematic(current, layers);
       if (saved && format === 'nbs') onClose();
     })()
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -360,7 +381,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
         <div
           className="export-format-row"
-          title=".nbs = Note Block Studio project; .litematic = spatial note block structure played by running through it (needs the infinote mod); .wav = audio file rendered with the same mix as in-app playback"
+          title=".nbs = Note Block Studio project; .litematic = spatial note block structure played by running through it (needs the infinote mod); .wav = audio file rendered with the same mix as in-app playback; .mid = Standard MIDI File with GM instrument mapping"
         >
           <label htmlFor="export-format">Format</label>
           <select
@@ -371,6 +392,7 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
             <option value="nbs">.nbs (Note Block Studio)</option>
             <option value="litematic">.litematic (infinote runner structure)</option>
             <option value="wav">.wav (audio render)</option>
+            <option value="midi">.mid (Standard MIDI File)</option>
           </select>
         </div>
         <div className="export-body">
@@ -421,6 +443,28 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
                   instrument sound ids and extra time-signature changes are not stored in .nbs.
                 </p>
               </>
+            ) : format === 'midi' ? (
+              <div className="lit-settings">
+                <label
+                  className="lit-row"
+                  title="Note blocks fire once and have no length, so MIDI notes need one. 'Sustain' rings until the next note of the same key on the track (capped at a quarter note); '1 tick' is literal."
+                >
+                  <span>Note length</span>
+                  <select
+                    value={midiNoteLength}
+                    onChange={(e) => setMidiNoteLength(e.target.value as MidiNoteLength)}
+                  >
+                    <option value="sustain">sustain until next note</option>
+                    <option value="oneTick">1 game tick</option>
+                  </select>
+                </label>
+                <p>
+                  Writes an SMF format-1 file: one MIDI track per checked track, tempo and
+                  time-signature changes included. Instruments map to General MIDI programs —
+                  editable per instrument in the Instruments dialog. Fine pitch and per-note pan
+                  cannot be stored in MIDI and are dropped with a warning.
+                </p>
+              </div>
             ) : format === 'wav' ? (
               <div className="lit-settings">
                 <label
