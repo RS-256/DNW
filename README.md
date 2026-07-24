@@ -170,7 +170,7 @@ Dependencies flow one way: `ui → state → core`.
 
 - `src/core` — UI-agnostic domain logic (data model, NBS / MIDI I/O, audio engine,
   litematic / NBT writer, infinote placement & config, platform adapters).
-  Must not import React or the upper layers; enforced by ESLint.
+  Must not import React or the upper layers.
 - `src/state` — zustand stores, undo/redo history (immer patches).
 - `src/ui` — React components, canvas piano roll, export modal.
 
