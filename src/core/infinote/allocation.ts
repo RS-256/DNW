@@ -8,41 +8,41 @@
  * full merge (infinote's import replaces the file wholesale). Inert entries
  * (memo keys pointing at nonexistent blocks) survive the round trip.
  */
-import { normalizeId, roundShift, slotKey } from './slots';
+import { normalizeId, roundShift, slotKey } from "./slots"
 
 export interface MappingEntry {
-  sound: string;
-  category: string;
-  pitchShift: number;
-  volume: number;
+  sound: string
+  category: string
+  pitchShift: number
+  volume: number
 }
 
 export interface AllocationState {
   /** slotKey -> base block id. */
-  slots: Record<string, string>;
+  slots: Record< string, string >
   /** Raw mappings from the imported infinote.json (blockId -> entry). */
-  imported: Record<string, MappingEntry>;
+  imported: Record< string, MappingEntry >
 }
 
-const STORAGE_KEY = 'dnw.infinoteAllocation';
+const STORAGE_KEY = "dnw.infinoteAllocation"
 
 export function emptyAllocation(): AllocationState {
-  return { slots: {}, imported: {} };
+  return { slots: {}, imported: {} }
 }
 
 export function loadAllocation(): AllocationState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyAllocation();
-    const parsed = JSON.parse(raw) as Partial<AllocationState>;
-    return { slots: parsed.slots ?? {}, imported: parsed.imported ?? {} };
+    const raw = localStorage.getItem( STORAGE_KEY )
+    if ( ! raw ) return emptyAllocation()
+    const parsed = JSON.parse( raw ) as Partial< AllocationState >
+    return { slots: parsed.slots ?? {}, imported: parsed.imported ?? {} }
   } catch {
-    return emptyAllocation();
+    return emptyAllocation()
   }
 }
 
-export function saveAllocation(state: AllocationState): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+export function saveAllocation( state: AllocationState ): void {
+  localStorage.setItem( STORAGE_KEY, JSON.stringify( state ) )
 }
 
 /**
@@ -50,40 +50,38 @@ export function saveAllocation(state: AllocationState): void {
  * schema-0 root-level mapping form). Existing slot assignments are
  * overwritten by the imported file; returns the number of mappings read.
  */
-export function seedFromInfinoteJson(state: AllocationState, text: string): number {
-  const parsed: unknown = JSON.parse(text);
-  if (typeof parsed !== 'object' || parsed === null) {
-    throw new Error('infinote.json: root is not an object');
+export function seedFromInfinoteJson( state: AllocationState, text: string ): number {
+  const parsed: unknown = JSON.parse( text )
+  if ( typeof parsed !== "object" || parsed === null ) {
+    throw new Error( "infinote.json: root is not an object" )
   }
-  const root = parsed as Record<string, unknown>;
-  const mappings = (
-    'mappings' in root ? root['mappings'] : root
-  ) as Record<string, Partial<MappingEntry>>;
-  if (typeof mappings !== 'object' || mappings === null) {
-    throw new Error('infinote.json: no mappings found');
+  const root = parsed as Record< string, unknown >
+  const mappings = ( "mappings" in root ? root[ "mappings" ] : root ) as Record< string, Partial< MappingEntry > >
+  if ( typeof mappings !== "object" || mappings === null ) {
+    throw new Error( "infinote.json: no mappings found" )
   }
 
-  let count = 0;
-  for (const [rawBlockId, entry] of Object.entries(mappings)) {
-    if (!entry || typeof entry.sound !== 'string') continue;
-    const blockId = normalizeId(rawBlockId);
+  let count = 0
+  for ( const [ rawBlockId, entry ] of Object.entries( mappings ) ) {
+    if ( ! entry || typeof entry.sound !== "string" ) continue
+    const blockId = normalizeId( rawBlockId )
     const mapping: MappingEntry = {
-      sound: normalizeId(entry.sound),
-      category: entry.category ?? 'RECORDS',
-      pitchShift: roundShift(Number(entry.pitchShift ?? 0)),
-      volume: Number(entry.volume ?? 3),
-    };
-    state.imported[blockId] = mapping;
-    state.slots[slotKey(mapping.sound, mapping.pitchShift)] = blockId;
-    count++;
+      sound: normalizeId( entry.sound ),
+      category: entry.category ?? "RECORDS",
+      pitchShift: roundShift( Number( entry.pitchShift ?? 0 ) ),
+      volume: Number( entry.volume ?? 3 )
+    }
+    state.imported[ blockId ] = mapping
+    state.slots[ slotKey( mapping.sound, mapping.pitchShift ) ] = blockId
+    count++
   }
-  return count;
+  return count
 }
 
 export interface ResolvedSlot {
-  soundId: string;
-  pitchShift: number;
-  blockId: string;
+  soundId: string
+  pitchShift: number
+  blockId: string
 }
 
 /**
@@ -93,33 +91,30 @@ export interface ResolvedSlot {
  */
 export function buildInfinoteConfig(
   state: AllocationState,
-  slots: ResolvedSlot[],
+  slots: ResolvedSlot[]
 ): { json: string; conflicts: string[] } {
-  const mappings: Record<string, MappingEntry> = { ...state.imported };
-  const conflicts: string[] = [];
+  const mappings: Record< string, MappingEntry > = { ...state.imported }
+  const conflicts: string[] = []
 
-  for (const slot of slots) {
-    const blockId = normalizeId(slot.blockId);
+  for ( const slot of slots ) {
+    const blockId = normalizeId( slot.blockId )
     const entry: MappingEntry = {
       sound: slot.soundId,
-      category: 'RECORDS',
-      pitchShift: roundShift(slot.pitchShift),
-      volume: 3.0,
-    };
-    const existing = mappings[blockId];
-    if (
-      existing &&
-      (existing.sound !== entry.sound || existing.pitchShift !== entry.pitchShift)
-    ) {
-      conflicts.push(
-        `${blockId}: already mapped to ${existing.sound}@${existing.pitchShift}, ` +
-          `wanted ${entry.sound}@${entry.pitchShift}`,
-      );
-      continue;
+      category: "RECORDS",
+      pitchShift: roundShift( slot.pitchShift ),
+      volume: 3.0
     }
-    mappings[blockId] = existing ?? entry;
+    const existing = mappings[ blockId ]
+    if ( existing && ( existing.sound !== entry.sound || existing.pitchShift !== entry.pitchShift ) ) {
+      conflicts.push(
+        `${ blockId }: already mapped to ${ existing.sound }@${ existing.pitchShift }, ` +
+          `wanted ${ entry.sound }@${ entry.pitchShift }`
+      )
+      continue
+    }
+    mappings[ blockId ] = existing ?? entry
   }
 
-  const json = JSON.stringify({ schema: 1, mappings }, null, 2);
-  return { json, conflicts };
+  const json = JSON.stringify( { schema: 1, mappings }, null, 2 )
+  return { json, conflicts }
 }
